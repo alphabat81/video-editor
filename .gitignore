@@ -1,0 +1,7 @@
+runtime/
+*.log
+*.lock
+
+# Local/editor-generated files
+.DS_Store
+Thumbs.db
