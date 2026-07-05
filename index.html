@@ -314,6 +314,35 @@ body {
 .clip.selected { border-color: #5ab4ff; outline: 1px solid #5ab4ff55; }
 .clip-video  { background: linear-gradient(135deg,#143020,#1e4830); }
 .clip-image  { background: linear-gradient(135deg,#142040,#1e3060); }
+.thumbnail-slot {
+  position: absolute; top: 4px; bottom: 4px; left: 0;
+  border: 2px dashed #f2b84b; border-radius: 5px;
+  background: linear-gradient(135deg,#3a2b10,#5a4318);
+  color: #ffe1a3; overflow: hidden; cursor: pointer;
+  display: flex; align-items: center; z-index: 12;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+}
+.thumbnail-slot:hover,
+.thumbnail-slot.drop-target {
+  border-color: #ffd87a;
+  background: linear-gradient(135deg,#4a3512,#70531d);
+}
+.thumbnail-slot img {
+  width: 42px; height: 100%; object-fit: cover; flex-shrink: 0;
+}
+.thumbnail-slot-label {
+  min-width: 0; padding: 0 7px; font-size: 10px; line-height: 1.25;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.thumbnail-slot-label strong { display: block; color: #fff0c9; font-size: 11px; }
+.thumbnail-slot-remove {
+  position: absolute; top: 2px; right: 2px; width: 17px; height: 17px;
+  border: 0; border-radius: 50%; background: rgba(0,0,0,.72);
+  color: #fff; cursor: pointer; font-size: 11px; line-height: 17px; padding: 0;
+}
+.thumbnail-slot-empty {
+  width: 100%; text-align: center; padding: 0 5px; font-size: 10px;
+}
 .clip-sticker { background: linear-gradient(135deg,#23334f,#315a7a); }
 .clip-subtitle { background: linear-gradient(135deg,#40300a,#5a450f); top: 8px !important; bottom: 8px !important; }
 .clip-thumb { width: 36px; height: 100%; object-fit: cover; flex-shrink: 0; opacity: .55; }
@@ -1057,6 +1086,9 @@ body {
 
 </div><!-- workspace -->
 
+<input type="file" id="thumbnailInput" accept="image/*,.png,.jpg,.jpeg,.gif,.webp,.bmp"
+       style="display:none" onchange="setThumbnailFromFile(this.files[0])">
+
 <!-- ══════════ TIMELINE ══════════ -->
 <div class="timeline-area">
   <div class="timeline-topbar">
@@ -1109,10 +1141,13 @@ body {
 // ══════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════
+const THUMBNAIL_DURATION = 1;
+
 const S = {
   clips: [],         // {id,type,name,track,startTime,duration,element,thumbnail,text?}
   subs: [],          // {id,start,end,text}
   media: [],         // uploaded media items
+  thumbnailMediaId: null,
   t: 0,              // currentTime (seconds)
   playing: false,
   totalDur: 0,
@@ -1154,6 +1189,7 @@ function _snapState() {
   return {
     clips: JSON.parse(JSON.stringify(S.clips.map(c => { const {element,...rest}=c; return rest; }))),
     subs: JSON.parse(JSON.stringify(S.subs)),
+    thumbnailMediaId: S.thumbnailMediaId,
     nid: S.nid,
   };
 }
@@ -1171,6 +1207,7 @@ function _restoreSnap(snap) {
     return med ? {...c, element: med.element, thumbnail: med.thumbnail} : {...c};
   });
   S.subs = snap.subs;
+  S.thumbnailMediaId = snap.thumbnailMediaId ?? null;
   S.nid = snap.nid;
   S.selId = null;
   recalcDuration(); renderTimeline(); renderPreview();
@@ -1234,6 +1271,25 @@ function renderPreview() {
   const W = canvas.width, H = canvas.height;
   ctx.fillStyle = '#000';
   ctx.fillRect(0,0,W,H);
+
+  if (S.t < THUMBNAIL_DURATION) {
+    const thumbnail = getThumbnailMedia();
+    if (thumbnail?.element) {
+      try { drawCover(thumbnail.element, W, H); } catch(e) {}
+    } else {
+      ctx.fillStyle = '#241c0d';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle = '#f2b84b';
+      ctx.font = `bold ${Math.floor(W*0.045)}px 'Malgun Gothic',sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('1초 썸네일을 넣어주세요', W/2, H/2);
+    }
+    updateProgress();
+    updateTimeDsp();
+    updatePlayhead();
+    return;
+  }
 
   const clip = S.clips.find(c =>
     c.track === 0 && S.t >= c.startTime && S.t < c.startTime + c.duration
@@ -1761,6 +1817,9 @@ function removeSelectedMedia() {
   const ids = new Set([...S.selMediaIds]);
   if (!ids.size) return showToast('삭제할 파일을 선택하세요.', 'error');
   saveState();
+  if (S.thumbnailMediaId != null && ids.has(S.thumbnailMediaId)) {
+    S.thumbnailMediaId = null;
+  }
 
   S.media = S.media.filter(item => {
     if (!ids.has(item.id)) return true;
@@ -1915,8 +1974,9 @@ function renderMediaGrid() {
 function addToTimeline(item, startTime) {
   if (startTime == null) {
     const last = S.clips.filter(c=>c.track===0).reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
-    startTime = last;
+    startTime = Math.max(THUMBNAIL_DURATION, last);
   }
+  startTime = Math.max(THUMBNAIL_DURATION, startTime);
   saveState();
   const clip = {
     id: S.nid++, type: item.type, name: item.name,
@@ -1936,6 +1996,7 @@ function addMediaListToTimeline(items, startTime) {
   if (startTime == null) {
     startTime = S.clips.filter(c=>c.track===0).reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
   }
+  startTime = Math.max(THUMBNAIL_DURATION, startTime);
   saveState();
   let cursor = startTime;
   let lastClip = null;
@@ -1956,12 +2017,130 @@ function addMediaListToTimeline(items, startTime) {
   if (lastClip) selectClip(lastClip.id);
 }
 
+function getThumbnailMedia() {
+  return S.media.find(item => item.id === S.thumbnailMediaId) || null;
+}
+
+function chooseThumbnailFile() {
+  const input = document.getElementById('thumbnailInput');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+function setThumbnailFromFile(file) {
+  if (!file) return;
+  if (!isImageFile(file)) {
+    showToast('썸네일에는 이미지 파일을 넣어주세요.', 'error');
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    const item = {
+      id: S.nid++, type: 'image', name: file.name, src: url,
+      element: img, thumbnail: url, duration: 3, file,
+    };
+    S.media.push(item);
+    renderMediaGrid();
+    setThumbnailFromMedia(item);
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    showToast('썸네일 이미지를 읽지 못했습니다.', 'error');
+  };
+  img.src = url;
+}
+
+function setThumbnailFromMedia(item) {
+  if (!item || item.type !== 'image' || !item.element) {
+    showToast('썸네일에는 이미지를 선택해주세요.', 'error');
+    return;
+  }
+  saveState();
+  S.thumbnailMediaId = item.id;
+  renderTimeline();
+  renderPreview();
+  showToast('앞부분 1초 썸네일을 설정했습니다.', 'success');
+}
+
+function clearThumbnail() {
+  if (S.thumbnailMediaId == null) return;
+  saveState();
+  S.thumbnailMediaId = null;
+  renderTimeline();
+  renderPreview();
+  showToast('썸네일을 비웠습니다.');
+}
+
+function buildThumbnailSlot() {
+  const item = getThumbnailMedia();
+  const el = document.createElement('div');
+  el.className = `thumbnail-slot${item ? ' filled' : ''}`;
+  el.style.width = Math.max(8, THUMBNAIL_DURATION * S.pxSec) + 'px';
+  el.title = item ? '클릭해서 1초 썸네일 교체' : '클릭하거나 이미지를 드롭해 1초 썸네일 추가';
+
+  if (item) {
+    const img = document.createElement('img');
+    img.src = item.thumbnail || item.src;
+    el.appendChild(img);
+    const label = document.createElement('div');
+    label.className = 'thumbnail-slot-label';
+    label.innerHTML = `<strong>썸네일 · 1초</strong>${item.name}`;
+    el.appendChild(label);
+    const remove = document.createElement('button');
+    remove.className = 'thumbnail-slot-remove';
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.title = '썸네일 비우기';
+    remove.addEventListener('click', ev => {
+      ev.stopPropagation();
+      clearThumbnail();
+    });
+    el.appendChild(remove);
+  } else {
+    const empty = document.createElement('div');
+    empty.className = 'thumbnail-slot-empty';
+    empty.innerHTML = '<strong>+ 1초 썸네일</strong><br>클릭 또는 이미지 드롭';
+    el.appendChild(empty);
+  }
+
+  el.addEventListener('click', chooseThumbnailFile);
+  el.addEventListener('dragover', ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    el.classList.add('drop-target');
+    ev.dataTransfer.dropEffect = 'copy';
+  });
+  el.addEventListener('dragleave', ev => {
+    ev.stopPropagation();
+    el.classList.remove('drop-target');
+  });
+  el.addEventListener('drop', ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    el.classList.remove('drop-target');
+    const file = [...(ev.dataTransfer.files || [])].find(isImageFile);
+    if (file) {
+      setThumbnailFromFile(file);
+    } else {
+      const media = S.dragMediaList?.find(item => item.type === 'image')
+        || (S.dragMedia?.type === 'image' ? S.dragMedia : null);
+      if (media) setThumbnailFromMedia(media);
+      else showToast('썸네일에는 이미지를 드롭해주세요.', 'error');
+    }
+    S.dragMedia = null;
+    S.dragMediaList = null;
+  });
+  return el;
+}
+
 function recalcDuration() {
   const mediaEnd = S.clips
     .filter(c => c.track === 0 && (c.type === 'image' || c.type === 'video'))
     .reduce((m, c) => Math.max(m, c.startTime + c.duration), 0);
   const fallbackEnd = S.clips.reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
-  S.totalDur = mediaEnd || fallbackEnd;
+  S.totalDur = Math.max(THUMBNAIL_DURATION, mediaEnd, fallbackEnd);
   if (S.t > S.totalDur) S.t = S.totalDur;
   document.getElementById('totalDurDsp').textContent = fmtTime(S.totalDur);
   document.getElementById('clipCountDsp').textContent = S.clips.filter(c=>c.track===0).length + '개';
@@ -2039,12 +2218,18 @@ function bindDrag(el, clip, startEv) {
     const dx = ev.clientX - sx;
     if (!moved && Math.abs(dx) > 3) { moved = true; saveState(); }
     if (moved) {
-      clip.startTime = Math.max(0, (sl + dx) / S.pxSec);
+      clip.startTime = Math.max(minClipStart(clip), (sl + dx) / S.pxSec);
       el.style.left = clip.startTime * S.pxSec + 'px';
     }
   };
   document.addEventListener('mousemove', mm);
   document.addEventListener('mouseup', mu);
+}
+
+function minClipStart(clip) {
+  return clip?.track === 0 && (clip.type === 'video' || clip.type === 'image')
+    ? THUMBNAIL_DURATION
+    : 0;
 }
 
 function getResizeTargets(anchorClip) {
@@ -2080,7 +2265,7 @@ function applyGroupUniformDuration(targets, anchorId, newDuration, side, snapsho
     if (side === 'left') {
       group.forEach(({ clip, snap }) => {
         const end = snap.startTime + snap.duration;
-        clip.startTime = Math.max(0, end - duration);
+        clip.startTime = Math.max(minClipStart(clip), end - duration);
         clip.duration = duration;
         syncSubTimingFromClip(clip);
       });
@@ -2125,7 +2310,7 @@ function bindResize(el, clip, handle, side) {
         syncSubTimingFromClip(clip);
       } else {
         const nd = Math.max(0.1, sd - dx/S.pxSec);
-        clip.startTime = Math.max(0, ss + (sd - nd));
+        clip.startTime = Math.max(minClipStart(clip), ss + (sd - nd));
         clip.duration = nd;
         el.style.left = clip.startTime * S.pxSec + 'px';
         el.style.width = Math.max(8, nd * S.pxSec) + 'px';
@@ -2185,7 +2370,7 @@ function selectClip(id) {
     </div>
     <div class="prop-grp">
       <div class="prop-lbl">시작 시간 (초)</div>
-      <input class="prop-inp" type="number" step="0.1" min="0" value="${clip.startTime.toFixed(2)}"
+      <input class="prop-inp" type="number" step="0.1" min="${minClipStart(clip)}" value="${clip.startTime.toFixed(2)}"
         onchange="updateCP(${id},'startTime',+this.value)">
     </div>
     <div class="prop-grp">
@@ -2341,6 +2526,7 @@ function renderMultiSelectionProps() {
 function updateCP(id, prop, val) {
   const c = S.clips.find(c=>c.id===id);
   if (!c) return;
+  if (prop === 'startTime') val = Math.max(minClipStart(c), val);
   c[prop] = val;
   recalcDuration(); renderTimeline(); renderPreview();
 }
@@ -2423,7 +2609,7 @@ function onDrop(ev, trackIdx) {
   const scroll = document.getElementById('tlScroll');
   const rect = ev.currentTarget.getBoundingClientRect();
   const x = ev.clientX - rect.left + scroll.scrollLeft;
-  const start = Math.max(0, x / S.pxSec);
+  const start = Math.max(THUMBNAIL_DURATION, x / S.pxSec);
   if (S.dragMediaList?.length > 1) addMediaListToTimeline(S.dragMediaList, start);
   else addToTimeline(S.dragMedia || S.dragMediaList[0], start);
   S.dragMedia = null;
@@ -3991,7 +4177,9 @@ renderTimeline = function() {
     document.getElementById('trackSub'),     // 2
     document.getElementById('trackEffect'),  // 3
   ];
-  tracks.forEach(t => t && t.querySelectorAll('.clip').forEach(c => c.remove()));
+  tracks.forEach(t => t && t.querySelectorAll('.clip,.thumbnail-slot').forEach(c => c.remove()));
+
+  tracks[0].appendChild(buildThumbnailSlot());
 
   S.clips.forEach(clip => {
     const tr = tracks[clip.track];
@@ -4021,6 +4209,10 @@ loadSRT = function(file) {
   r.onload = e => {
     const entries = parseSRT(e.target.result);
     if (!entries.length) return showToast('SRT 파일에서 자막을 찾을 수 없습니다.', 'error');
+    entries.forEach(en => {
+      en.start += THUMBNAIL_DURATION;
+      en.end += THUMBNAIL_DURATION;
+    });
     saveState();
     S.subs = S.subs.concat(entries);
     entries.forEach(en => {
@@ -5868,6 +6060,7 @@ renderPreview = function() {
 buildTextPanel();
 buildEffectsPanel();
 updateAutoTransitionUI();
+recalcDuration();
 renderPreview();
 renderTimeline();
 updateTimeDsp();
