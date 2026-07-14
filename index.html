@@ -636,6 +636,8 @@ body {
         <span class="exp-lbl">해상도</span>
         <select class="exp-sel" id="expResOpt" onchange="document.getElementById('expResInfo').textContent=getExportDims().join('×')">
           <option value="project" selected>작업 해상도 그대로</option>
+          <option value="3840x2140">4K &#44032;&#47196; 3840 x 2140</option>
+          <option value="2140x3840">4K &#49464;&#47196; 2140 x 3840</option>
           <option value="1920x1080">FHD 1920 × 1080</option>
           <option value="1080x1920">FHD 세로 1080 × 1920</option>
           <option value="1080">Full HD (비율 유지)</option>
@@ -1272,19 +1274,9 @@ function renderPreview() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0,0,W,H);
 
-  if (S.t < THUMBNAIL_DURATION) {
-    const thumbnail = getThumbnailMedia();
-    if (thumbnail?.element) {
-      try { drawCover(thumbnail.element, W, H); } catch(e) {}
-    } else {
-      ctx.fillStyle = '#241c0d';
-      ctx.fillRect(0,0,W,H);
-      ctx.fillStyle = '#f2b84b';
-      ctx.font = `bold ${Math.floor(W*0.045)}px 'Malgun Gothic',sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('1초 썸네일을 넣어주세요', W/2, H/2);
-    }
+  const thumbnail = getThumbnailMedia();
+  if (thumbnail?.element && S.t < THUMBNAIL_DURATION) {
+    try { drawCover(thumbnail.element, W, H); } catch(e) {}
     updateProgress();
     updateTimeDsp();
     updatePlayhead();
@@ -1972,11 +1964,12 @@ function renderMediaGrid() {
 //  TIMELINE CORE
 // ══════════════════════════════════════════════
 function addToTimeline(item, startTime) {
+  const thumbnailDuration = getActiveThumbnailDuration();
   if (startTime == null) {
     const last = S.clips.filter(c=>c.track===0).reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
-    startTime = Math.max(THUMBNAIL_DURATION, last);
+    startTime = Math.max(thumbnailDuration, last);
   }
-  startTime = Math.max(THUMBNAIL_DURATION, startTime);
+  startTime = Math.max(thumbnailDuration, startTime);
   saveState();
   const clip = {
     id: S.nid++, type: item.type, name: item.name,
@@ -1993,10 +1986,11 @@ function addToTimeline(item, startTime) {
 
 function addMediaListToTimeline(items, startTime) {
   if (!items.length) return;
+  const thumbnailDuration = getActiveThumbnailDuration();
   if (startTime == null) {
     startTime = S.clips.filter(c=>c.track===0).reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
   }
-  startTime = Math.max(THUMBNAIL_DURATION, startTime);
+  startTime = Math.max(thumbnailDuration, startTime);
   saveState();
   let cursor = startTime;
   let lastClip = null;
@@ -2019,6 +2013,10 @@ function addMediaListToTimeline(items, startTime) {
 
 function getThumbnailMedia() {
   return S.media.find(item => item.id === S.thumbnailMediaId) || null;
+}
+
+function getActiveThumbnailDuration() {
+  return getThumbnailMedia() ? THUMBNAIL_DURATION : 0;
 }
 
 function chooseThumbnailFile() {
@@ -2140,7 +2138,7 @@ function recalcDuration() {
     .filter(c => c.track === 0 && (c.type === 'image' || c.type === 'video'))
     .reduce((m, c) => Math.max(m, c.startTime + c.duration), 0);
   const fallbackEnd = S.clips.reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
-  S.totalDur = Math.max(THUMBNAIL_DURATION, mediaEnd, fallbackEnd);
+  S.totalDur = Math.max(getActiveThumbnailDuration(), mediaEnd, fallbackEnd);
   if (S.t > S.totalDur) S.t = S.totalDur;
   document.getElementById('totalDurDsp').textContent = fmtTime(S.totalDur);
   document.getElementById('clipCountDsp').textContent = S.clips.filter(c=>c.track===0).length + '개';
@@ -2228,7 +2226,7 @@ function bindDrag(el, clip, startEv) {
 
 function minClipStart(clip) {
   return clip?.track === 0 && (clip.type === 'video' || clip.type === 'image')
-    ? THUMBNAIL_DURATION
+    ? getActiveThumbnailDuration()
     : 0;
 }
 
@@ -3139,6 +3137,7 @@ function createExportAudioMixer(stream) {
       offset: Math.max(0, opt.offset || 0),
       loop: !!opt.loop,
       duration: opt.duration || 0,
+      loopDuration: Math.max(0, opt.loopDuration || 0),
       active: false,
     });
     created.push(audio);
@@ -3161,9 +3160,13 @@ function createExportAudioMixer(stream) {
     if (!item.element || item.duration <= 0) return;
     addMedia(item.element.currentSrc || item.element.src, {
       start: item.start || 0,
-      end: getBGMEnd(item),
+      end: item.loop
+        ? getBGMEnd(item)
+        : Math.min(getBGMEnd(item), (item.start || 0) + getBGMSourceDuration(item)),
+      offset: getBGMSourceStart(item),
       loop: item.loop,
       duration: item.duration,
+      loopDuration: getBGMSourceDuration(item),
       volume: item.vol,
     });
   });
@@ -3195,7 +3198,11 @@ function createExportAudioMixer(stream) {
           return;
         }
         let at = t - track.start + track.offset;
-        if (track.loop && track.duration > 0) at = at % track.duration;
+        if (track.loop && track.loopDuration > 0) {
+          at = track.offset + ((t - track.start) % track.loopDuration);
+        } else if (track.loop && track.duration > 0) {
+          at = at % track.duration;
+        }
         if (Number.isFinite(at) && Math.abs(track.audio.currentTime - at) > 0.18) {
           try { track.audio.currentTime = Math.max(0, at); } catch(e) {}
         }
@@ -4179,7 +4186,7 @@ renderTimeline = function() {
   ];
   tracks.forEach(t => t && t.querySelectorAll('.clip,.thumbnail-slot').forEach(c => c.remove()));
 
-  tracks[0].appendChild(buildThumbnailSlot());
+  if (getThumbnailMedia()) tracks[0].appendChild(buildThumbnailSlot());
 
   S.clips.forEach(clip => {
     const tr = tracks[clip.track];
@@ -4209,10 +4216,12 @@ loadSRT = function(file) {
   r.onload = e => {
     const entries = parseSRT(e.target.result);
     if (!entries.length) return showToast('SRT 파일에서 자막을 찾을 수 없습니다.', 'error');
-    entries.forEach(en => {
-      en.start += THUMBNAIL_DURATION;
-      en.end += THUMBNAIL_DURATION;
-    });
+    if (getThumbnailMedia()) {
+      entries.forEach(en => {
+        en.start += THUMBNAIL_DURATION;
+        en.end += THUMBNAIL_DURATION;
+      });
+    }
     saveState();
     S.subs = S.subs.concat(entries);
     entries.forEach(en => {
@@ -6066,6 +6075,248 @@ renderTimeline();
 updateTimeDsp();
 saveState();       // initial state so first undo works
 _updateUndoRedoBtns();
+</script>
+
+<script id="bgm-source-range-patch">
+(function installBGMSourceRangePatch() {
+  if (window.__bgmSourceRangeInstalled) return;
+  window.__bgmSourceRangeInstalled = true;
+
+  const info = document.getElementById('bgmInfo');
+  const loopLabel = document.getElementById('bgmLoop')?.closest('label');
+  if (info && loopLabel && !document.getElementById('bgmSourceRangeBox')) {
+    const box = document.createElement('div');
+    box.id = 'bgmSourceRangeBox';
+    box.style.cssText = 'margin:7px 0;padding:7px;background:#151515;border:1px solid #303030;border-radius:6px';
+    box.innerHTML = `
+      <div style="font-size:10px;color:#aaa;margin-bottom:5px">&#50896;&#48376; BGM &#49324;&#50857; &#44396;&#44036; (&#52488;)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <label style="font-size:10px;color:#666">&#50896;&#48376; &#49884;&#51089;
+          <input id="bgmSourceStartInput" type="number" min="0" step="0.1" value="0" class="prop-inp"
+            style="margin-top:2px;font-size:10px;padding:4px 6px" onchange="setBGMSourceStart(this.value)">
+        </label>
+        <label style="font-size:10px;color:#666">&#50896;&#48376; &#45149;
+          <input id="bgmSourceEndInput" type="number" min="0.1" step="0.1" value="0.1" class="prop-inp"
+            style="margin-top:2px;font-size:10px;padding:4px 6px" onchange="setBGMSourceEnd(this.value)">
+        </label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:5px">
+        <input id="bgmSourceStartRange" type="range" min="0" max="1" step="0.1" value="0"
+          style="width:100%;accent-color:#5ab4ff" oninput="setBGMSourceStart(this.value)">
+        <input id="bgmSourceEndRange" type="range" min="0.1" max="1" step="0.1" value="0.1"
+          style="width:100%;accent-color:#7fcf9f" oninput="setBGMSourceEnd(this.value)">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+        <button type="button" onclick="previewBGMSourceRange()"
+          style="border:1px solid #3a5f7a;background:#1b3040;color:#8ecfff;border-radius:4px;padding:4px 7px;font-size:10px;cursor:pointer">&#9654; &#49440;&#53469; &#44396;&#44036; &#48120;&#47532;&#46307;&#44592;</button>
+        <span id="bgmSourceDuration" style="font-size:10px;color:#777"></span>
+      </div>`;
+    info.insertBefore(box, loopLabel);
+  }
+
+  function ensureSourceRange(item) {
+    if (!item) return null;
+    const duration = Math.max(0, Number(item.duration) || 0);
+    const timelineLength = Math.max(0.1, getBGMEnd(item) - (item.start || 0));
+    if (!Number.isFinite(item.sourceStart)) item.sourceStart = 0;
+    item.sourceStart = Math.max(0, Math.min(item.sourceStart, Math.max(0, duration - 0.1)));
+    if (!Number.isFinite(item.sourceEnd) || item.sourceEnd <= item.sourceStart) {
+      item.sourceEnd = duration > 0
+        ? Math.min(duration, item.sourceStart + timelineLength)
+        : item.sourceStart + timelineLength;
+    }
+    if (duration > 0) item.sourceEnd = Math.min(duration, item.sourceEnd);
+    item.sourceEnd = Math.max(item.sourceStart + 0.1, item.sourceEnd);
+    return item;
+  }
+
+  window.getBGMSourceStart = function(item = getActiveBGM()) {
+    item = ensureSourceRange(item);
+    return item ? item.sourceStart : 0;
+  };
+
+  window.getBGMSourceEnd = function(item = getActiveBGM()) {
+    item = ensureSourceRange(item);
+    return item ? item.sourceEnd : 0;
+  };
+
+  window.getBGMSourceDuration = function(item = getActiveBGM()) {
+    return Math.max(0.1, getBGMSourceEnd(item) - getBGMSourceStart(item));
+  };
+
+  window.syncBGMSourceInputs = function() {
+    const item = ensureSourceRange(getActiveBGM());
+    const startInput = document.getElementById('bgmSourceStartInput');
+    const endInput = document.getElementById('bgmSourceEndInput');
+    const startRange = document.getElementById('bgmSourceStartRange');
+    const endRange = document.getElementById('bgmSourceEndRange');
+    const durationText = document.getElementById('bgmSourceDuration');
+    const max = Math.max(0.1, Number(item?.duration) || 0.1);
+    const sourceStart = item ? getBGMSourceStart(item) : 0;
+    const sourceEnd = item ? getBGMSourceEnd(item) : 0.1;
+    [startInput, startRange].forEach(el => {
+      if (!el) return;
+      el.max = Math.max(0, max - 0.1).toFixed(1);
+      el.value = sourceStart.toFixed(1);
+    });
+    [endInput, endRange].forEach(el => {
+      if (!el) return;
+      el.max = max.toFixed(1);
+      el.value = sourceEnd.toFixed(1);
+    });
+    if (durationText) durationText.textContent = item
+      ? `\uC120\uD0DD ${fmtTime(getBGMSourceDuration(item))} / \uC804\uCCB4 ${fmtTime(max)}`
+      : '';
+  };
+
+  function fitTimelineToSource(item) {
+    if (!item) return;
+    const sourceLength = getBGMSourceDuration(item);
+    const maxEnd = S.totalDur > 0 ? S.totalDur : item.start + sourceLength;
+    item.end = Math.max(item.start + 0.1, Math.min(maxEnd, item.start + sourceLength));
+  }
+
+  window.setBGMSourceStart = function(value) {
+    const item = ensureSourceRange(getActiveBGM());
+    if (!item) return;
+    stopBGMSourcePreview();
+    const oldLength = getBGMSourceDuration(item);
+    const maxStart = Math.max(0, item.duration - 0.1);
+    item.sourceStart = Math.max(0, Math.min(Number(value) || 0, maxStart));
+    item.sourceEnd = Math.min(item.duration, item.sourceStart + oldLength);
+    if (item.sourceEnd - item.sourceStart < 0.1) item.sourceStart = Math.max(0, item.sourceEnd - 0.1);
+    fitTimelineToSource(item);
+    syncBGMSourceInputs();
+    renderBGMTrack();
+    syncBGMPlayback();
+  };
+
+  window.setBGMSourceEnd = function(value) {
+    const item = ensureSourceRange(getActiveBGM());
+    if (!item) return;
+    stopBGMSourcePreview();
+    item.sourceEnd = Math.max(item.sourceStart + 0.1, Math.min(Number(value) || item.sourceStart + 0.1, item.duration || Infinity));
+    fitTimelineToSource(item);
+    syncBGMSourceInputs();
+    renderBGMTrack();
+    syncBGMPlayback();
+  };
+
+  window.stopBGMSourcePreview = function() {
+    if (!BGM.sourcePreview) return;
+    try { BGM.sourcePreview.pause(); BGM.sourcePreview.src = ''; } catch(e) {}
+    BGM.sourcePreview = null;
+  };
+
+  window.previewBGMSourceRange = function() {
+    const item = ensureSourceRange(getActiveBGM());
+    if (!item) return;
+    if (BGM.sourcePreview) {
+      stopBGMSourcePreview();
+      return;
+    }
+    const audio = new Audio(item.url || item.element?.src);
+    BGM.sourcePreview = audio;
+    audio.volume = item.vol == null ? BGM.vol : item.vol;
+    audio.onloadedmetadata = () => {
+      audio.currentTime = getBGMSourceStart(item);
+      audio.play().catch(() => stopBGMSourcePreview());
+    };
+    audio.ontimeupdate = () => {
+      if (audio.currentTime >= getBGMSourceEnd(item) - 0.03) stopBGMSourcePreview();
+    };
+    audio.onended = stopBGMSourcePreview;
+  };
+
+  const originalSyncInputs = window.syncBGMInputs;
+  window.syncBGMInputs = function() {
+    const result = originalSyncInputs.apply(this, arguments);
+    syncBGMSourceInputs();
+    return result;
+  };
+
+  const originalRenderTrack = window.renderBGMTrack;
+  window.renderBGMTrack = function() {
+    const result = originalRenderTrack.apply(this, arguments);
+    BGM.items.forEach(item => {
+      const label = document.querySelector(`.bgm-bar[data-bid="${item.id}"] .clip-label`);
+      if (label) label.textContent += ` | \uC6D0\uBCF8 ${fmtTime(getBGMSourceStart(item))}-${fmtTime(getBGMSourceEnd(item))}`;
+    });
+    return result;
+  };
+
+  const originalLoadBGM = window.loadBGM;
+  window.loadBGM = function(file) {
+    originalLoadBGM(file);
+    const item = getActiveBGM();
+    if (!item) return;
+    item.sourceStart = 0;
+    item.sourceEnd = 0;
+    item.element.loop = false;
+    const finish = () => {
+      item.duration = Number(item.element.duration) || item.duration || 0;
+      ensureSourceRange(item);
+      fitTimelineToSource(item);
+      syncBGMInputs();
+      renderBGMTrack();
+    };
+    if (item.element.readyState >= 1) finish();
+    else item.element.addEventListener('loadedmetadata', finish, { once: true });
+  };
+
+  const originalSetActive = window.setActiveBGM;
+  window.setActiveBGM = function() {
+    const result = originalSetActive.apply(this, arguments);
+    syncBGMSourceInputs();
+    return result;
+  };
+
+  const originalSetLoop = window.setBGMLoop;
+  window.setBGMLoop = function(checked) {
+    const result = originalSetLoop.call(this, checked);
+    const item = getActiveBGM();
+    if (item?.element) item.element.loop = false;
+    return result;
+  };
+
+  const originalRemove = window.removeBGM;
+  window.removeBGM = function() {
+    stopBGMSourcePreview();
+    const result = originalRemove.apply(this, arguments);
+    syncBGMSourceInputs();
+    return result;
+  };
+
+  window.bgmLocalTime = function(item, t) {
+    const local = Math.max(0, t - item.start);
+    const sourceStart = getBGMSourceStart(item);
+    const sourceLength = getBGMSourceDuration(item);
+    if (item.loop && sourceLength > 0) return sourceStart + (local % sourceLength);
+    return Math.min(sourceStart + local, getBGMSourceEnd(item) - 0.01);
+  };
+
+  window.syncBGMPlayback = function() {
+    BGM.items.forEach(item => {
+      ensureSourceRange(item);
+      const timelineLocal = S.t - item.start;
+      const sourceLength = getBGMSourceDuration(item);
+      const inRange = S.playing && S.t >= item.start && S.t < getBGMEnd(item) && (item.loop || timelineLocal < sourceLength);
+      if (!inRange) {
+        if (!item.element.paused) item.element.pause();
+        return;
+      }
+      const at = bgmLocalTime(item, S.t);
+      if (Number.isFinite(at) && Math.abs(item.element.currentTime - at) > 0.25) {
+        try { item.element.currentTime = at; } catch(e) {}
+      }
+      item.element.loop = false;
+      item.element.volume = item.vol;
+      item.element.play().catch(() => {});
+    });
+  };
+
+  syncBGMSourceInputs();
+})();
 </script>
 </body>
 </html>
