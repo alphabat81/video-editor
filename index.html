@@ -6318,5 +6318,143 @@ _updateUndoRedoBtns();
   syncBGMSourceInputs();
 })();
 </script>
+
+<style id="bgm-inline-source-style">
+.bgm-bar .clip-label {
+  position: absolute; left: 8px; right: 8px; top: 2px; height: 13px;
+  z-index: 4; padding: 0; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none; line-height: 13px;
+}
+.bgm-source-strip {
+  position: absolute; left: 6px; right: 6px; bottom: 2px; height: 10px;
+  z-index: 7; overflow: hidden; border-radius: 3px;
+  background: repeating-linear-gradient(90deg,#102218 0,#102218 3px,#1b3828 3px,#1b3828 5px);
+  border: 1px solid #315a42; cursor: crosshair;
+}
+.bgm-source-window {
+  position: absolute; top: 0; bottom: 0; min-width: 2px;
+  background: linear-gradient(90deg,#2b8a57,#43b56f);
+  border-left: 2px solid #ffd36a; border-right: 2px solid #ffd36a;
+  box-shadow: 0 0 0 1px #9affbd55 inset; cursor: grab;
+}
+.bgm-source-window.dragging { cursor: grabbing; }
+.bgm-source-handle {
+  position: absolute; top: 0; bottom: 0; width: 8px; z-index: 2;
+  background: rgba(255,211,106,.35); cursor: ew-resize;
+}
+.bgm-source-handle.left { left: -2px; }
+.bgm-source-handle.right { right: -2px; }
+</style>
+<script id="bgm-inline-source-patch">
+(function installInlineBGMSourceSelector() {
+  if (window.__bgmInlineSourceInstalled) return;
+  window.__bgmInlineSourceInstalled = true;
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function fitTimelineLength(item) {
+    const sourceLength = getBGMSourceDuration(item);
+    const limit = S.totalDur > 0 ? S.totalDur : item.start + sourceLength;
+    item.end = Math.max(item.start + 0.1, Math.min(limit, item.start + sourceLength));
+  }
+
+  function paintSelector(bar, item) {
+    const strip = bar.querySelector('.bgm-source-strip');
+    const win = bar.querySelector('.bgm-source-window');
+    if (!strip || !win) return;
+    const duration = Math.max(0.1, Number(item.duration) || 0.1);
+    const sourceStart = getBGMSourceStart(item);
+    const sourceEnd = getBGMSourceEnd(item);
+    win.style.left = `${clamp(sourceStart / duration * 100, 0, 100)}%`;
+    win.style.width = `${clamp((sourceEnd - sourceStart) / duration * 100, 0.05, 100)}%`;
+    const label = bar.querySelector('.clip-label');
+    if (label) label.textContent = `\uD83C\uDFB5 ${item.name} \u00B7 ${fmtTime(sourceStart)}-${fmtTime(sourceEnd)}`;
+    bar.title = `\uC544\uB798 \uC120\uD0DD \uB760: \uC6D0\uBCF8 BGM \uAD6C\uAC04 \uC870\uC808 | \uC704\uCABD: \uD0C0\uC784\uB77C\uC778 \uC704\uCE58 \uC774\uB3D9`;
+  }
+
+  function applySourceRange(bar, item, start, end) {
+    const duration = Math.max(0.1, Number(item.duration) || 0.1);
+    item.sourceStart = clamp(start, 0, Math.max(0, duration - 0.1));
+    item.sourceEnd = clamp(end, item.sourceStart + 0.1, duration);
+    fitTimelineLength(item);
+    syncBGMSourceInputs();
+    syncBGMPlayback();
+    paintSelector(bar, item);
+  }
+
+  function bindSelector(bar, item) {
+    if (!bar || bar.querySelector('.bgm-source-strip')) return;
+    const strip = document.createElement('div');
+    strip.className = 'bgm-source-strip';
+    strip.innerHTML = '<div class="bgm-source-window"><div class="bgm-source-handle left"></div><div class="bgm-source-handle right"></div></div>';
+    bar.appendChild(strip);
+    const win = strip.querySelector('.bgm-source-window');
+
+    strip.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setActiveBGM(item.id, false);
+      const rect = strip.getBoundingClientRect();
+      const duration = Math.max(0.1, Number(item.duration) || 0.1);
+      const originalStart = getBGMSourceStart(item);
+      const originalEnd = getBGMSourceEnd(item);
+      const originalLength = Math.max(0.1, originalEnd - originalStart);
+      const startX = ev.clientX;
+      let mode = 'place';
+      if (ev.target.classList.contains('bgm-source-handle')) {
+        mode = ev.target.classList.contains('left') ? 'left' : 'right';
+      } else if (ev.target.closest('.bgm-source-window')) {
+        mode = 'move';
+      }
+
+      if (mode === 'place') {
+        const center = clamp((ev.clientX - rect.left) / Math.max(1, rect.width), 0, 1) * duration;
+        let nextStart = clamp(center - originalLength / 2, 0, Math.max(0, duration - originalLength));
+        applySourceRange(bar, item, nextStart, nextStart + originalLength);
+        mode = 'move';
+      }
+      win.classList.add('dragging');
+
+      const mm = moveEv => {
+        moveEv.preventDefault();
+        const dxSeconds = (moveEv.clientX - startX) / Math.max(1, rect.width) * duration;
+        if (mode === 'left') {
+          applySourceRange(bar, item, originalStart + dxSeconds, originalEnd);
+        } else if (mode === 'right') {
+          applySourceRange(bar, item, originalStart, originalEnd + dxSeconds);
+        } else {
+          const nextStart = clamp(originalStart + dxSeconds, 0, Math.max(0, duration - originalLength));
+          applySourceRange(bar, item, nextStart, nextStart + originalLength);
+        }
+      };
+
+      const mu = () => {
+        document.removeEventListener('mousemove', mm);
+        document.removeEventListener('mouseup', mu);
+        win.classList.remove('dragging');
+        renderBGMTrack();
+      };
+      document.addEventListener('mousemove', mm);
+      document.addEventListener('mouseup', mu);
+    });
+
+    paintSelector(bar, item);
+  }
+
+  const previousRenderBGMTrack = window.renderBGMTrack;
+  window.renderBGMTrack = function() {
+    const result = previousRenderBGMTrack.apply(this, arguments);
+    BGM.items.forEach(item => {
+      const bar = document.querySelector(`.bgm-bar[data-bid="${item.id}"]`);
+      if (bar) bindSelector(bar, item);
+    });
+    return result;
+  };
+
+  renderBGMTrack();
+})();
+</script>
 </body>
 </html>
