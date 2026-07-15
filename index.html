@@ -3309,7 +3309,15 @@ async function expMediaRecorder(fps, bitrate, opt) {
   await sleep(1800);
 }
 
+function ffmpegIsolationReady() {
+  return globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== 'undefined';
+}
+document.documentElement.dataset.ffmpegIsolation = ffmpegIsolationReady() ? 'ready' : 'blocked';
+
 async function createExportFFmpeg(progressBase, progressSpan) {
+  if (!ffmpegIsolationReady()) {
+    throw new Error('FFmpeg 실행 환경이 준비되지 않았습니다. 3210 서버를 재시작한 뒤 새로고침해 주세요.');
+  }
   if (!window._ffLoaded) {
     await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
     window._ffLoaded = true;
@@ -3447,6 +3455,7 @@ function downloadBlob(blob, filename) {
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
+    s.crossOrigin = 'anonymous';
     s.src = src; s.onload = res; s.onerror = () => rej(new Error(`스크립트 로드 실패: ${src}`));
     document.head.appendChild(s);
   });

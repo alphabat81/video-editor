@@ -7,6 +7,14 @@ const { spawn } = require('child_process');
 const root = __dirname;
 const port = Number(process.env.PORT || 3210);
 
+// FFmpeg.wasm uses SharedArrayBuffer and therefore requires a cross-origin
+// isolated browsing context. Apply these headers to every local response.
+const isolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+
 const mime = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -44,7 +52,7 @@ const mime = {
 };
 
 function send(res, status, headers, body) {
-  res.writeHead(status, headers);
+  res.writeHead(status, { ...isolationHeaders, ...headers });
   res.end(body);
 }
 
