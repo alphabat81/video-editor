@@ -623,11 +623,7 @@ body {
       <div class="exp-title">📤 동영상 내보내기</div>
       <div class="exp-info">총 길이: <span id="expDurInfo">-</span> &nbsp;|&nbsp; 해상도: <span id="expResInfo">-</span></div>
       <div class="exp-formats">
-        <div class="exp-fmt-btn selected" data-fmt="auto" onclick="selExpFmt(this)">
-          <div class="exp-fmt-name">⚡ 빠른 내보내기</div>
-          <div class="exp-fmt-desc">실시간 녹화 (오프라인)</div>
-        </div>
-        <div class="exp-fmt-btn" data-fmt="ffmpeg" onclick="selExpFmt(this)">
+        <div class="exp-fmt-btn selected" data-fmt="ffmpeg" onclick="selExpFmt(this)">
           <div class="exp-fmt-name">🎬 FFmpeg MP4</div>
           <div class="exp-fmt-desc">H.264 + AAC (인터넷 필요)</div>
         </div>
@@ -662,7 +658,7 @@ body {
           <option value="24">24 fps</option>
         </select>
       </div>
-      <div class="exp-note" id="expFmtNote">⚡ <b>빠른 내보내기:</b> 재생하면서 실시간 녹화합니다. 브라우저에 따라 WebM 또는 MP4로 저장됩니다. 인터넷 불필요.</div>
+      <div class="exp-note" id="expFmtNote"><b>Compatibility MP4 only:</b> H.264 + AAC-LC, stereo, 44.1 kHz. No fast-export fallback.</div>
       <div class="exp-btns">
         <button class="exp-btn exp-btn-cancel" onclick="closeExportModal()">취소</button>
         <button class="exp-btn exp-btn-go" onclick="startExport()">▶ 내보내기 시작</button>
@@ -2915,7 +2911,7 @@ document.addEventListener('keydown', ev => {
 // ══════════════════════════════════════════════
 //  EXPORT ENGINE
 // ══════════════════════════════════════════════
-const EXP = { fmt:'auto', cancelled:false, recorder:null };
+const EXP = { fmt:'ffmpeg', cancelled:false, recorder:null };
 
 function getExportDims() {
   // Compute export canvas size: scale current canvas aspect ratio to selected long-edge size
@@ -2953,13 +2949,9 @@ function closeExportModal() {
 
 function selExpFmt(el) {
   document.querySelectorAll('.exp-fmt-btn').forEach(b => b.classList.remove('selected'));
-  el.classList.add('selected');
-  EXP.fmt = el.dataset.fmt;
-  const notes = {
-    auto: '⚡ <b>빠른 내보내기:</b> 재생하면서 실시간 녹화합니다. 브라우저에 따라 WebM 또는 MP4로 저장됩니다. 인터넷 불필요.',
-    ffmpeg: '🎬 <b>FFmpeg MP4:</b> 최종 파일을 Video H.264(libx264), Audio AAC 코덱의 MP4로 인코딩합니다. CDN에서 FFmpeg를 로드합니다 (~30MB, 인터넷 필요).',
-  };
-  document.getElementById('expFmtNote').innerHTML = notes[EXP.fmt] || '';
+  if (el) el.classList.add('selected');
+  EXP.fmt = 'ffmpeg';
+  document.getElementById('expFmtNote').innerHTML = '<b>Compatibility MP4 only:</b> H.264 + AAC-LC, stereo, 44.1 kHz. No fast-export fallback.';
 }
 
 async function startExport() {
@@ -2978,31 +2970,14 @@ async function startExport() {
   document.getElementById('expProgress').style.display = '';
   try {
     await ensureExportTtsReady();
-    if (EXP.fmt === 'ffmpeg' && projectHasExportAudio()) {
-      try {
-        const recorded = await expMediaRecorder(fps, bitrate, { returnBlob:true, progressMax:72 });
-        if (!EXP.cancelled && recorded?.blob) {
-          await transcodeRecordedExport(recorded.blob, recorded.ext, bitrate);
-        }
-      } catch(e) {
-        if (EXP.cancelled) return;
-        console.warn('FFmpeg export failed, falling back to fast export:', e);
-        setExpProg(0, 'FFmpeg 내보내기 실패 · 빠른 내보내기로 다시 시도합니다...');
-        await sleep(700);
-        await expMediaRecorder(fps, bitrate);
-      }
-    } else if (EXP.fmt === 'ffmpeg') {
-      try {
-        await expFFmpeg(fps, bitrate);
-      } catch(e) {
-        if (EXP.cancelled) return;
-        console.warn('FFmpeg export failed, falling back to fast export:', e);
-        setExpProg(0, 'FFmpeg 내보내기 실패 · 빠른 내보내기로 다시 시도합니다...');
-        await sleep(700);
-        await expMediaRecorder(fps, bitrate);
-      }
+    EXP.fmt = 'ffmpeg';
+    if (projectHasExportAudio()) {
+      const recorded = await expMediaRecorder(fps, bitrate, { returnBlob:true, progressMax:72 });
+      if (EXP.cancelled) return;
+      if (!recorded?.blob) throw new Error('The intermediate recording did not contain media data.');
+      await transcodeRecordedExport(recorded.blob, recorded.ext, bitrate);
     } else {
-      await expMediaRecorder(fps, bitrate);
+      await expFFmpeg(fps, bitrate);
     }
   } catch(e) {
     if (!EXP.cancelled) showToast('내보내기 실패:\n' + e.message, 'error', 5000);
@@ -3361,7 +3336,7 @@ async function transcodeRecordedExport(blob, ext, bitrate) {
   if (EXP.cancelled) return;
 
   const inputName = `recorded.${ext || 'webm'}`;
-  const outName = 'video_export_h264_aac.mp4';
+  const outName = 'video_export_compatible_h264_aac.mp4';
   try { ff.FS('unlink', inputName); } catch(e) {}
   try { ff.FS('unlink', outName); } catch(e) {}
 
@@ -3370,15 +3345,20 @@ async function transcodeRecordedExport(blob, ext, bitrate) {
   await ff.run(
     '-i', inputName,
     '-map', '0:v:0',
-    '-map', '0:a?',
+    '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
     '-b:v', `${Math.floor(bitrate/1000)}k`,
     '-pix_fmt', 'yuv420p',
+    '-tag:v', 'avc1',
     '-c:a', 'aac',
-    '-b:a', '192k',
-    '-ar', '48000',
+    '-profile:a', 'aac_low',
+    '-b:a', '160k',
+    '-ar', '44100',
+    '-ac', '2',
+    '-af', 'aresample=async=1:first_pts=0',
     '-movflags', '+faststart',
+    '-f', 'mp4',
     '-shortest',
     outName
   );
@@ -3391,7 +3371,7 @@ async function transcodeRecordedExport(blob, ext, bitrate) {
   try { ff.FS('unlink', outName); } catch(e) {}
 
   setExpProg(100, '완료! H.264(libx264) + AAC MP4 파일을 다운로드합니다.');
-  downloadBlob(mp4, 'video_export_h264_aac.mp4');
+  downloadBlob(mp4, 'video_export_compatible_h264_aac.mp4');
   await sleep(1800);
 }
 
@@ -6615,5 +6595,7 @@ _updateUndoRedoBtns();
   renderBGMTrack();
 })();
 </script>
+
+<!-- export-audio-compatibility-patch: FFmpeg-only H.264 + AAC-LC stereo 44.1kHz -->
 </body>
 </html>
