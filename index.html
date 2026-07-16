@@ -1352,25 +1352,21 @@ function drawCover(src, W, H, alpha = 1) {
   const sw = src.videoWidth || src.naturalWidth;
   const sh = src.videoHeight || src.naturalHeight;
   if (!sw || !sh) return;
-  const padPx = Math.round(H * AI_PADDING * 0.1);
-  const availH = H - padPx * 2;
-  let sc, dx, dy;
-  if (AI_PADDING > 0) {
-    // padding-cover-crop-fix: keep the existing cover framing inside the padded band.
-    sc = Math.max(W / sw, availH / sh);
-    dx = (W - sw * sc) / 2;
-    dy = padPx + (availH - sh * sc) / 2;
-  } else {
-    sc = Math.max(W / sw, H / sh);
-    dx = (W - sw * sc) / 2;
-    dy = (H - sh * sc) / 2;
-  }
+  // padding-uniform-scale-fix: 1/2/3 slots scale the complete frame to 90/80/70%.
+  const frameScale = Math.max(0.1, 1 - AI_PADDING * 0.1);
+  const frameW = Math.round(W * frameScale);
+  const frameH = Math.round(H * frameScale);
+  const padX = (W - frameW) / 2;
+  const padY = (H - frameH) / 2;
+  const sc = Math.max(frameW / sw, frameH / sh);
+  const dx = padX + (frameW - sw * sc) / 2;
+  const dy = padY + (frameH - sh * sc) / 2;
   const motion = getVideoMotion();
   const f = buildAIFilter();
   ctx.save();
   if (AI_PADDING > 0) {
     ctx.beginPath();
-    ctx.rect(0, padPx, W, availH);
+    ctx.rect(padX, padY, frameW, frameH);
     ctx.clip();
   }
   const finalAlpha = Math.max(0, Math.min(1, alpha)) * Math.max(0, Math.min(1, motion.alpha));
