@@ -1356,7 +1356,8 @@ function drawCover(src, W, H, alpha = 1) {
   const availH = H - padPx * 2;
   let sc, dx, dy;
   if (AI_PADDING > 0) {
-    sc = Math.min(W / sw, availH / sh);
+    // padding-cover-crop-fix: keep the existing cover framing inside the padded band.
+    sc = Math.max(W / sw, availH / sh);
     dx = (W - sw * sc) / 2;
     dy = padPx + (availH - sh * sc) / 2;
   } else {
@@ -1367,6 +1368,11 @@ function drawCover(src, W, H, alpha = 1) {
   const motion = getVideoMotion();
   const f = buildAIFilter();
   ctx.save();
+  if (AI_PADDING > 0) {
+    ctx.beginPath();
+    ctx.rect(0, padPx, W, availH);
+    ctx.clip();
+  }
   const finalAlpha = Math.max(0, Math.min(1, alpha)) * Math.max(0, Math.min(1, motion.alpha));
   if (finalAlpha !== 1) ctx.globalAlpha = finalAlpha;
   if (f !== 'none') ctx.filter = f;
