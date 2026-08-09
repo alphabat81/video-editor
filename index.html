@@ -1348,6 +1348,17 @@ function getAutoTransitionAt(time, clip) {
   return { next, alpha: smoothStep01((time - start) / dur), duration: dur };
 }
 
+// Smooth-cut audio/preview pair lookup. Keeping this in one place makes the
+// visual preview, live playback, and export mixer use the exact same boundary.
+function getTransitionAt(time) {
+  if (!S.autoTransition) return null;
+  for (const from of getTrackMediaClips()) {
+    const tr = getAutoTransitionAt(time, from);
+    if (tr) return { from, ...tr };
+  }
+  return null;
+}
+
 function drawCover(src, W, H, alpha = 1) {
   const sw = src.videoWidth || src.naturalWidth;
   const sh = src.videoHeight || src.naturalHeight;
@@ -1445,11 +1456,14 @@ function togglePlay() {
   S.playing ? pause() : play();
 }
 function syncVideoPlayback() {
+  const transition = S.playing ? getTransitionAt(S.t) : null;
   S.clips.forEach(c => {
     if (c.type !== 'video' || !c.element) return;
     const active = S.playing && S.t >= c.startTime && S.t < c.startTime + c.duration;
     const transitionPreview = S.playing && isClipNeededForTransition(c, S.t);
-    if (!active) {
+    const transitionNext = !!(transition && transition.next?.id === c.id);
+    const transitionFrom = !!(transition && transition.from?.id === c.id);
+    if (!active && !transitionNext) {
       if (transitionPreview) {
         try { c.element.currentTime = 0; } catch(e) {}
       }
@@ -1462,7 +1476,11 @@ function syncVideoPlayback() {
       try { c.element.currentTime = localTime; } catch(e) {}
     }
     c.element.muted = !!EXP.suppressLiveAudio;
-    c.element.volume = c.vol != null ? c.vol : 1;
+    const baseVolume = c.vol != null ? c.vol : 1;
+    let mix = 1;
+    if (transitionFrom) mix *= (1 - transition.alpha);
+    if (transitionNext) mix *= transition.alpha;
+    c.element.volume = baseVolume * Math.max(0, Math.min(1, mix));
     if (c.element.paused) c.element.play().catch(()=>{});
   });
 }
@@ -3109,6 +3127,9 @@ function createExportAudioMixer(stream) {
     }
     tracks.push({
       audio,
+      gainNode: gain,
+      baseVolume: opt.volume == null ? 1 : opt.volume,
+      clipId: opt.clipId == null ? null : opt.clipId,
       start: Math.max(0, opt.start || 0),
       end: Math.max(0, opt.end == null ? S.totalDur : opt.end),
       offset: Math.max(0, opt.offset || 0),
@@ -3130,6 +3151,7 @@ function createExportAudioMixer(stream) {
         end: c.startTime + c.duration,
         offset: 0,
         volume: c.vol != null ? c.vol : 1,
+        clipId: c.id,
       });
     });
 
@@ -3165,21 +3187,30 @@ function createExportAudioMixer(stream) {
       if (ctxAudio.state === 'suspended') await ctxAudio.resume();
     },
     sync(t) {
+      const transition = getTransitionAt(t);
       tracks.forEach(track => {
-        const inRange = t >= track.start && t < track.end;
+        const transitionNext = !!(transition && track.clipId != null && transition.next?.id === track.clipId);
+        const transitionFrom = !!(transition && track.clipId != null && transition.from?.id === track.clipId);
+        const inRange = (t >= track.start && t < track.end) || transitionNext;
         if (!inRange) {
           if (track.active) {
             track.audio.pause();
             track.active = false;
           }
+          track.gainNode.gain.value = 0;
           return;
         }
-        let at = t - track.start + track.offset;
+        const localTime = Math.max(0, t - track.start);
+        let at = localTime + track.offset;
         if (track.loop && track.loopDuration > 0) {
-          at = track.offset + ((t - track.start) % track.loopDuration);
+          at = track.offset + (localTime % track.loopDuration);
         } else if (track.loop && track.duration > 0) {
-          at = at % track.duration;
+          at = (localTime + track.offset) % track.duration;
         }
+        let mix = 1;
+        if (transitionFrom) mix *= (1 - transition.alpha);
+        if (transitionNext) mix *= transition.alpha;
+        track.gainNode.gain.value = track.baseVolume * Math.max(0, Math.min(1, mix));
         if (Number.isFinite(at) && Math.abs(track.audio.currentTime - at) > 0.18) {
           try { track.audio.currentTime = Math.max(0, at); } catch(e) {}
         }
