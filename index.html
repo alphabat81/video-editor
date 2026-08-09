@@ -1359,6 +1359,18 @@ function getTransitionAt(time) {
   return null;
 }
 
+// Keep dialogue and clip audio from overlapping for the full visual dissolve.
+// A short audio handoff prevents clicks without making speech sound doubled.
+function getAudioTransitionAt(time) {
+  const tr = getTransitionAt(time);
+  if (!tr) return null;
+  const end = tr.from.startTime + tr.from.duration;
+  const duration = Math.min(0.12, tr.duration);
+  const start = end - duration;
+  if (time < start || time >= end) return null;
+  return { ...tr, alpha: smoothStep01((time - start) / duration), duration };
+}
+
 function drawCover(src, W, H, alpha = 1) {
   const sw = src.videoWidth || src.naturalWidth;
   const sh = src.videoHeight || src.naturalHeight;
@@ -1456,7 +1468,7 @@ function togglePlay() {
   S.playing ? pause() : play();
 }
 function syncVideoPlayback() {
-  const transition = S.playing ? getTransitionAt(S.t) : null;
+  const transition = S.playing ? getAudioTransitionAt(S.t) : null;
   S.clips.forEach(c => {
     if (c.type !== 'video' || !c.element) return;
     const active = S.playing && S.t >= c.startTime && S.t < c.startTime + c.duration;
@@ -3187,7 +3199,7 @@ function createExportAudioMixer(stream) {
       if (ctxAudio.state === 'suspended') await ctxAudio.resume();
     },
     sync(t) {
-      const transition = getTransitionAt(t);
+      const transition = getAudioTransitionAt(t);
       tracks.forEach(track => {
         const transitionNext = !!(transition && track.clipId != null && transition.next?.id === track.clipId);
         const transitionFrom = !!(transition && track.clipId != null && transition.from?.id === track.clipId);
