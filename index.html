@@ -2245,6 +2245,7 @@ function bindDrag(el, clip, startEv) {
     if (!moved && Math.abs(dx) > 3) { moved = true; saveState(); }
     if (moved) {
       clip.startTime = Math.max(minClipStart(clip), (sl + dx) / S.pxSec);
+      syncEffectTimingForTarget(clip);
       el.style.left = clip.startTime * S.pxSec + 'px';
     }
   };
@@ -2294,6 +2295,7 @@ function applyGroupUniformDuration(targets, anchorId, newDuration, side, snapsho
         clip.startTime = Math.max(minClipStart(clip), end - duration);
         clip.duration = duration;
         syncSubTimingFromClip(clip);
+        syncEffectTimingForTarget(clip);
       });
       return;
     }
@@ -2308,6 +2310,7 @@ function applyGroupUniformDuration(targets, anchorId, newDuration, side, snapsho
       clip.startTime = cursor;
       clip.duration = duration;
       syncSubTimingFromClip(clip);
+      syncEffectTimingForTarget(clip);
       cursor += duration;
     });
   });
@@ -2334,6 +2337,7 @@ function bindResize(el, clip, handle, side) {
         clip.duration = Math.max(0.1, sd + dx/S.pxSec);
         el.style.width = Math.max(8, clip.duration * S.pxSec) + 'px';
         syncSubTimingFromClip(clip);
+        syncEffectTimingForTarget(clip);
       } else {
         const nd = Math.max(0.1, sd - dx/S.pxSec);
         clip.startTime = Math.max(minClipStart(clip), ss + (sd - nd));
@@ -2341,6 +2345,7 @@ function bindResize(el, clip, handle, side) {
         el.style.left = clip.startTime * S.pxSec + 'px';
         el.style.width = Math.max(8, nd * S.pxSec) + 'px';
         syncSubTimingFromClip(clip);
+        syncEffectTimingForTarget(clip);
       }
     };
     const mu = () => {
@@ -2554,6 +2559,7 @@ function updateCP(id, prop, val) {
   if (!c) return;
   if (prop === 'startTime') val = Math.max(minClipStart(c), val);
   c[prop] = val;
+  syncEffectTimingForTarget(c);
   recalcDuration(); renderTimeline(); renderPreview();
 }
 function updateSubText(id, text) {
@@ -2589,6 +2595,9 @@ function deleteClip(id) {
   const c = S.clips[i];
   if (c.type === 'subtitle' && c.subId) S.subs = S.subs.filter(s=>s.id!==c.subId);
   S.clips.splice(i,1);
+  if (c.type === 'video' || c.type === 'image') {
+    S.clips = S.clips.filter(effect => !(effect.type === 'effect' && effect.targetClipId === c.id));
+  }
   S.selId = null;
   recalcDuration(); renderTimeline(); renderPreview();
   document.getElementById('clipPropsArea').innerHTML =
@@ -4549,7 +4558,8 @@ function fxIntroOut(c,W,H,lt,dur){
 // getVideoMotion — reads active effect clips and returns {scale,ox,oy,rot,alpha}
 function getVideoMotion() {
   const m = { scale:1, ox:0, oy:0, rot:0, alpha:1 };
-  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration).forEach(clip=>{
+  const video = getVideoClipAt(S.t);
+  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration&&effectMatchesVideo(c, video)).forEach(clip=>{
     const preset = EFFECT_PRESETS.find(p=>p.id===clip.effectId);
     if (!preset||!preset.motion) return;
     const lt = S.t - clip.startTime;
@@ -4720,6 +4730,30 @@ function filterEffects(q) {
   buildEffectsPanel();
 }
 
+// Every effect clip is owned by exactly one video/image clip. Keeping the
+// timing linked means moving or trimming a cut cannot leave its effect behind.
+function syncEffectTimingForTarget(target) {
+  if (!target || target.track !== 0 || (target.type !== 'video' && target.type !== 'image')) return;
+  S.clips.forEach(effect => {
+    if (effect.type !== 'effect' || effect.targetClipId !== target.id) return;
+    effect.startTime = target.startTime;
+    effect.duration = target.duration;
+  });
+}
+
+function getVideoClipAt(time) {
+  return S.clips.find(c =>
+    c.track === 0 && (c.type === 'video' || c.type === 'image') &&
+    time >= c.startTime && time < c.startTime + c.duration
+  ) || null;
+}
+
+function effectMatchesVideo(effect, video) {
+  if (!effect || effect.type !== 'effect' || !video) return false;
+  if (effect.targetClipId != null) return effect.targetClipId === video.id;
+  return effectBelongsToTarget(effect, video);
+}
+
 function getEffectTargetClips() {
   const selected = getSelectedClips().filter(c => c && c.track === 0 && (c.type === 'image' || c.type === 'video'));
   if (selected.length) return selected;
@@ -4748,7 +4782,7 @@ function effectBelongsToTarget(effect, target) {
 
 function addEffectClip(preset) {
   preset=preset||EFFECT_PRESETS.find(p=>p.id===selEffectId)||EFFECT_PRESETS[0];
-  const targets = getEffectTargetClips();
+  const targets = [...new Map(getEffectTargetClips().map(target => [target.id, target])).values()];
   if (!targets.length) return showToast('효과를 적용할 이미지나 영상을 먼저 선택하세요.', 'error');
   saveState();
 
@@ -4785,7 +4819,8 @@ function addEffectClip(preset) {
 
 // ── Draw effect clips on canvas ──
 function drawEffectClips(W,H) {
-  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration).forEach(clip=>{
+  const video = getVideoClipAt(S.t);
+  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration&&effectMatchesVideo(c, video)).forEach(clip=>{
     const preset=EFFECT_PRESETS.find(p=>p.id===clip.effectId);
     if(!preset) return;
     try { preset.render(ctx,W,H,S.t-clip.startTime,clip.duration); } catch(e){}
