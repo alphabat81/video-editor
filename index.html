@@ -740,6 +740,8 @@ body {
           <div>클릭하거나 파일을 드래그</div>
           <div style="font-size:10px;margin-top:2px;color:#555">이미지 · 동영상</div>
         </div>
+        <button id="reimportExportBtn" class="media-add-selected" style="display:none;width:100%;margin:6px 0 0"
+          onclick="reimportLastExport()">↻ 최근 내보낸 영상 다시 불러오기</button>
         <div class="media-select-row">
           <label><input type="checkbox" id="mediaSelectAll" onchange="toggleAllMedia(this.checked)"> 전체선택</label>
           <span id="mediaSelCount">0개 선택</span>
@@ -1160,6 +1162,8 @@ const S = {
   dragMediaList: null,
   lastTs: null,
 };
+
+const EXPORT_CACHE = { file: null, importedName: '' };
 
 // ══════════════════════════════════════════════
 //  TOAST
@@ -1676,6 +1680,9 @@ function addVidMedia(file, opt) {
     vid.onerror = null;
     setTimeout(addItem, 1200);
   };
+  // Explicitly start metadata loading; this is important for downloaded MP4
+  // files whose File.type is empty or reported as application/octet-stream.
+  try { vid.load(); } catch(e) {}
 }
 
 async function ensureImportFFmpeg() {
@@ -3500,11 +3507,33 @@ async function expFFmpeg(fps, bitrate) {
 }
 
 function downloadBlob(blob, filename) {
+  if (blob && blob.size > 0) {
+    try {
+      EXPORT_CACHE.file = new File([blob], filename, { type: blob.type || 'video/mp4' });
+      EXPORT_CACHE.importedName = '';
+      const btn = document.getElementById('reimportExportBtn');
+      if (btn) {
+        btn.style.display = '';
+        btn.title = `${filename}을 미디어 목록으로 다시 불러옵니다.`;
+      }
+    } catch(e) {}
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function reimportLastExport() {
+  const file = EXPORT_CACHE.file;
+  if (!file || !file.size) return showToast('먼저 영상을 내보내 주세요.', 'error');
+  if (EXPORT_CACHE.importedName === file.name) {
+    return showToast('최근 내보낸 영상은 이미 미디어 목록에 있습니다.');
+  }
+  EXPORT_CACHE.importedName = file.name;
+  addVidMedia(file, { exported: true });
+  showToast(`내보낸 영상 다시 불러오는 중: ${file.name}`, null, 3500);
 }
 function loadScript(src) {
   return new Promise((res, rej) => {
