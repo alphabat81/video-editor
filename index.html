@@ -3303,9 +3303,17 @@ async function expMediaRecorder(fps, bitrate, opt) {
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
 
   try {
+    // Do not hold the canvas recorder behind a slow BGM decode.  Some MP3
+    // files take a couple of seconds to reach canplay; waiting here makes the
+    // first part of the exported video look frozen even though the timeline
+    // has already been started.  The mixer keeps preparing in the background
+    // and sync() will attach the decoded audio on the next tick.
+    let mixerReady = Promise.resolve();
     if (mixer?.count) {
       setExpProg(0, '오디오 준비 중...');
-      await mixer.prepare();
+      mixerReady = mixer.prepare().catch(err => {
+        console.warn('export audio preparation delayed:', err);
+      });
     }
     await mixer?.start();
     seekTo(0);
@@ -3320,12 +3328,15 @@ async function expMediaRecorder(fps, bitrate, opt) {
       recorder.start(200);
 
       setExpProg(1, '녹화 시작 준비 중...');
-      setTimeout(() => {
+      const beginCapture = () => {
         if (EXP.cancelled) { try { recorder.stop(); } catch(e){} return; }
         seekTo(0);
         renderPreview();
-        mixer?.sync(0);
         play();
+        // Start the audio clock in the same turn as the video clock.  This
+        // avoids the browser waiting for the first BGM packet before it emits
+        // canvas frames, while preserving the requested source offset.
+        mixer?.sync(0);
 
         const startMs = Date.now();
         const totalMs = S.totalDur * 1000;
@@ -3344,8 +3355,14 @@ async function expMediaRecorder(fps, bitrate, opt) {
             setTimeout(() => { try { recorder.stop(); } catch(e){} }, 700);
           }
         }, 80);
-      }, 120);
+      };
+      // MediaRecorder is ready immediately after start(); no artificial
+      // 120 ms hold is needed and it compounds with slow audio startup.
+      beginCapture();
     });
+    // Keep the promise observed so a late decode failure never becomes an
+    // unhandled rejection.  Audio that did decode is still included.
+    await mixerReady;
   } finally {
     mixer?.cleanup();
     EXP.suppressLiveAudio = oldSuppressLiveAudio;
@@ -6717,3 +6734,4 @@ _updateUndoRedoBtns();
 <!-- export-audio-compatibility-patch: FFmpeg-only H.264 + AAC-LC stereo 44.1kHz -->
 </body>
 </html>
+
