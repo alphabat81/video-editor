@@ -623,11 +623,7 @@ body {
       <div class="exp-title">📤 동영상 내보내기</div>
       <div class="exp-info">총 길이: <span id="expDurInfo">-</span> &nbsp;|&nbsp; 해상도: <span id="expResInfo">-</span></div>
       <div class="exp-formats">
-        <div class="exp-fmt-btn selected" data-fmt="auto" onclick="selExpFmt(this)">
-          <div class="exp-fmt-name">⚡ 빠른 내보내기</div>
-          <div class="exp-fmt-desc">실시간 녹화 (오프라인)</div>
-        </div>
-        <div class="exp-fmt-btn" data-fmt="ffmpeg" onclick="selExpFmt(this)">
+        <div class="exp-fmt-btn selected" data-fmt="ffmpeg" onclick="selExpFmt(this)">
           <div class="exp-fmt-name">🎬 FFmpeg MP4</div>
           <div class="exp-fmt-desc">H.264 + AAC (인터넷 필요)</div>
         </div>
@@ -636,6 +632,8 @@ body {
         <span class="exp-lbl">해상도</span>
         <select class="exp-sel" id="expResOpt" onchange="document.getElementById('expResInfo').textContent=getExportDims().join('×')">
           <option value="project" selected>작업 해상도 그대로</option>
+          <option value="3840x2140">4K &#44032;&#47196; 3840 x 2140</option>
+          <option value="2140x3840">4K &#49464;&#47196; 2140 x 3840</option>
           <option value="1920x1080">FHD 1920 × 1080</option>
           <option value="1080x1920">FHD 세로 1080 × 1920</option>
           <option value="1080">Full HD (비율 유지)</option>
@@ -660,7 +658,7 @@ body {
           <option value="24">24 fps</option>
         </select>
       </div>
-      <div class="exp-note" id="expFmtNote">⚡ <b>빠른 내보내기:</b> 재생하면서 실시간 녹화합니다. 브라우저에 따라 WebM 또는 MP4로 저장됩니다. 인터넷 불필요.</div>
+      <div class="exp-note" id="expFmtNote"><b>Compatibility MP4 only:</b> H.264 + AAC-LC, stereo, 44.1 kHz. No fast-export fallback.</div>
       <div class="exp-btns">
         <button class="exp-btn exp-btn-cancel" onclick="closeExportModal()">취소</button>
         <button class="exp-btn exp-btn-go" onclick="startExport()">▶ 내보내기 시작</button>
@@ -705,6 +703,7 @@ body {
 
 <!-- Hidden file inputs -->
 <input type="file" id="mediaInput" accept="image/*,video/*,audio/*,.avi,.mov,.mp4,.mp3,.3gp,.mpg,.mpeg,.m4v,.vob,.wmv,.asf,.mkv,.flv,.webm,.gif,.mxf,.av1,.aac,.mp2,.pcm,.flac,.ogg,.opus,.wav" multiple style="display:none">
+<input type="file" id="projectImportInput" accept="video/*,image/*,.avi,.mov,.mp4,.3gp,.mpg,.mpeg,.m4v,.vob,.wmv,.asf,.mkv,.flv,.webm,.mxf,.av1,.jpg,.jpeg,.png,.webp,.gif,.bmp" multiple style="display:none">
 <input type="file" id="srtInput" accept=".srt,.txt" style="display:none">
 <input type="file" id="bgmInput" accept="audio/*,.mp3,.aac,.mp2,.pcm,.flac,.ogg,.opus,.wav" style="display:none" onchange="loadBGM(this.files[0])">
 
@@ -712,6 +711,9 @@ body {
 <div class="toolbar">
   <button class="tool-btn active" data-tab="media" onclick="switchToolTab('media',this)">
     <span class="tool-icon">🎞</span>미디어
+  </button>
+  <button class="tool-btn" data-tab="import" onclick="switchToolTab('import',this)">
+    <span class="tool-icon">📂</span>불러오기
   </button>
   <button class="tool-btn" data-tab="text" onclick="switchToolTab('text',this)">
     <span class="tool-icon" style="font-weight:900;font-size:14px">T</span>텍스트
@@ -742,6 +744,8 @@ body {
           <div>클릭하거나 파일을 드래그</div>
           <div style="font-size:10px;margin-top:2px;color:#555">이미지 · 동영상</div>
         </div>
+        <button id="reimportExportBtn" class="media-add-selected" style="display:none;width:100%;margin:6px 0 0;padding:8px 10px;background:#263b52;border:1px solid #3b6f9e;border-radius:6px;color:#cfe7ff;cursor:pointer;font-size:11px"
+          onclick="reimportLastExport()">&#8635; 최근 내보낸 영상 다시 불러오기</button>
         <div class="media-select-row">
           <label><input type="checkbox" id="mediaSelectAll" onchange="toggleAllMedia(this.checked)"> 전체선택</label>
           <span id="mediaSelCount">0개 선택</span>
@@ -958,6 +962,35 @@ body {
       </div>
     </div>
 
+    <!-- Import tab -->
+    <div class="panel-tab" id="tabImport">
+      <div class="panel-header">파일 불러오기</div>
+      <div class="panel-content">
+        <div class="upload-zone" id="projectImportZone">
+          <div style="font-size:26px;margin-bottom:4px">📂</div>
+          <div>편집할 영상·이미지 선택</div>
+          <div style="font-size:10px;margin-top:2px;color:#555">내보낸 MP4도 다시 편집할 수 있습니다</div>
+        </div>
+        <button class="srt-upload-btn" onclick="document.getElementById('projectImportInput').click()">
+          📂 파일 선택
+        </button>
+        <div id="projectImportStatus" style="margin-top:8px;padding:8px;background:#1a1a1a;border-radius:6px;color:#8fb7d6;font-size:10px;line-height:1.45">
+          불러온 영상은 미디어 목록과 타임라인에 자동으로 추가됩니다. 같은 브라우저에서 방금 내보낸 영상은 원본 편집 레이어도 복원됩니다.
+        </div>
+        <div id="importLayerActions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          <button class="media-add-selected" style="padding:7px 4px;background:#2a3b55;border:1px solid #3b6f9e;color:#cfe7ff;cursor:pointer;font-size:10px" onclick="addTextFromImportTab()">T 텍스트 추가</button>
+          <button class="media-add-selected" style="padding:7px 4px;background:#2a3b55;border:1px solid #3b6f9e;color:#cfe7ff;cursor:pointer;font-size:10px" onclick="document.getElementById('bgmInput').click()">♫ BGM 추가·교체</button>
+          <button class="media-add-selected" style="padding:7px 4px;background:#2a3b55;border:1px solid #3b6f9e;color:#cfe7ff;cursor:pointer;font-size:10px" onclick="muteImportedVideoAudio()">🔇 원본 소리 끄기</button>
+        </div>
+        <button id="importRecentBtn" class="media-add-selected" style="display:none;width:100%;margin-top:8px;padding:8px 10px;background:#263b52;border:1px solid #3b6f9e;border-radius:6px;color:#cfe7ff;cursor:pointer;font-size:11px" onclick="reimportLastExport()">
+          &#8635; 최근 내보낸 영상 다시 불러오기
+        </button>
+        <div style="margin-top:14px;color:#666;font-size:10px;line-height:1.5">
+          타임라인에 추가된 파일은 컷 분할·길이 조절·편집효과·자막·BGM을 적용한 뒤 다시 내보낼 수 있습니다.
+        </div>
+      </div>
+    </div>
+
     <!-- Text tab -->
     <div class="panel-tab" id="tabText">
       <button class="text-add-btn" onclick="addTextClip(null)">＋ 텍스트 추가</button>
@@ -1163,6 +1196,8 @@ const S = {
   lastTs: null,
 };
 
+const EXPORT_CACHE = { file: null, importedName: '', exportName: '', projectSnapshot: null };
+
 // ══════════════════════════════════════════════
 //  TOAST
 // ══════════════════════════════════════════════
@@ -1272,19 +1307,9 @@ function renderPreview() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0,0,W,H);
 
-  if (S.t < THUMBNAIL_DURATION) {
-    const thumbnail = getThumbnailMedia();
-    if (thumbnail?.element) {
-      try { drawCover(thumbnail.element, W, H); } catch(e) {}
-    } else {
-      ctx.fillStyle = '#241c0d';
-      ctx.fillRect(0,0,W,H);
-      ctx.fillStyle = '#f2b84b';
-      ctx.font = `bold ${Math.floor(W*0.045)}px 'Malgun Gothic',sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('1초 썸네일을 넣어주세요', W/2, H/2);
-    }
+  const thumbnail = getThumbnailMedia();
+  if (thumbnail?.element && S.t < THUMBNAIL_DURATION) {
+    try { drawCover(thumbnail.element, W, H); } catch(e) {}
     updateProgress();
     updateTimeDsp();
     updatePlayhead();
@@ -1360,25 +1385,50 @@ function getAutoTransitionAt(time, clip) {
   return { next, alpha: smoothStep01((time - start) / dur), duration: dur };
 }
 
+// Smooth-cut audio/preview pair lookup. Keeping this in one place makes the
+// visual preview, live playback, and export mixer use the exact same boundary.
+function getTransitionAt(time) {
+  if (!S.autoTransition) return null;
+  for (const from of getTrackMediaClips()) {
+    const tr = getAutoTransitionAt(time, from);
+    if (tr) return { from, ...tr };
+  }
+  return null;
+}
+
+// Keep dialogue and clip audio from overlapping for the full visual dissolve.
+// A short audio handoff prevents clicks without making speech sound doubled.
+function getAudioTransitionAt(time) {
+  const tr = getTransitionAt(time);
+  if (!tr) return null;
+  const end = tr.from.startTime + tr.from.duration;
+  const duration = Math.min(0.12, tr.duration);
+  const start = end - duration;
+  if (time < start || time >= end) return null;
+  return { ...tr, alpha: smoothStep01((time - start) / duration), duration };
+}
+
 function drawCover(src, W, H, alpha = 1) {
   const sw = src.videoWidth || src.naturalWidth;
   const sh = src.videoHeight || src.naturalHeight;
   if (!sw || !sh) return;
-  const padPx = Math.round(H * AI_PADDING * 0.1);
-  const availH = H - padPx * 2;
-  let sc, dx, dy;
-  if (AI_PADDING > 0) {
-    sc = Math.min(W / sw, availH / sh);
-    dx = (W - sw * sc) / 2;
-    dy = padPx + (availH - sh * sc) / 2;
-  } else {
-    sc = Math.max(W / sw, H / sh);
-    dx = (W - sw * sc) / 2;
-    dy = (H - sh * sc) / 2;
-  }
+  // padding-uniform-scale-fix: 1/2/3 slots scale the complete frame to 90/80/70%.
+  const frameScale = Math.max(0.1, 1 - AI_PADDING * 0.1);
+  const frameW = Math.round(W * frameScale);
+  const frameH = Math.round(H * frameScale);
+  const padX = (W - frameW) / 2;
+  const padY = (H - frameH) / 2;
+  const sc = Math.max(frameW / sw, frameH / sh);
+  const dx = padX + (frameW - sw * sc) / 2;
+  const dy = padY + (frameH - sh * sc) / 2;
   const motion = getVideoMotion();
   const f = buildAIFilter();
   ctx.save();
+  if (AI_PADDING > 0) {
+    ctx.beginPath();
+    ctx.rect(padX, padY, frameW, frameH);
+    ctx.clip();
+  }
   const finalAlpha = Math.max(0, Math.min(1, alpha)) * Math.max(0, Math.min(1, motion.alpha));
   if (finalAlpha !== 1) ctx.globalAlpha = finalAlpha;
   if (f !== 'none') ctx.filter = f;
@@ -1455,11 +1505,14 @@ function togglePlay() {
   S.playing ? pause() : play();
 }
 function syncVideoPlayback() {
+  const transition = S.playing ? getAudioTransitionAt(S.t) : null;
   S.clips.forEach(c => {
     if (c.type !== 'video' || !c.element) return;
     const active = S.playing && S.t >= c.startTime && S.t < c.startTime + c.duration;
     const transitionPreview = S.playing && isClipNeededForTransition(c, S.t);
-    if (!active) {
+    const transitionNext = !!(transition && transition.next?.id === c.id);
+    const transitionFrom = !!(transition && transition.from?.id === c.id);
+    if (!active && !transitionNext) {
       if (transitionPreview) {
         try { c.element.currentTime = 0; } catch(e) {}
       }
@@ -1472,7 +1525,11 @@ function syncVideoPlayback() {
       try { c.element.currentTime = localTime; } catch(e) {}
     }
     c.element.muted = !!EXP.suppressLiveAudio;
-    c.element.volume = c.vol != null ? c.vol : 1;
+    const baseVolume = c.vol != null ? c.vol : 1;
+    let mix = 1;
+    if (transitionFrom) mix *= (1 - transition.alpha);
+    if (transitionNext) mix *= transition.alpha;
+    c.element.volume = baseVolume * Math.max(0, Math.min(1, mix));
     if (c.element.paused) c.element.play().catch(()=>{});
   });
 }
@@ -1559,12 +1616,18 @@ document.getElementById('mediaInput').onchange = e => {
   handleFiles([...e.target.files]);
   e.target.value = '';
 };
+document.getElementById('projectImportInput').onchange = e => {
+  importEditableFiles([...e.target.files]);
+  e.target.value = '';
+};
 document.getElementById('srtInput').onchange = e => {
   if (e.target.files[0]) loadSRT(e.target.files[0]);
   e.target.value = '';
 };
 document.getElementById('uploadZone').onclick = () =>
   document.getElementById('mediaInput').click();
+document.getElementById('projectImportZone').onclick = () =>
+  document.getElementById('projectImportInput').click();
 
 const SUPPORTED_VIDEO_EXTS = new Set(['avi','mov','mp4','3gp','mpg','mpeg','m4v','vob','wmv','asf','mkv','flv','webm','mxf','av1']);
 const SUPPORTED_AUDIO_EXTS = new Set(['mp3','aac','mp2','pcm','flac','ogg','opus','wav']);
@@ -1597,6 +1660,55 @@ function handleFiles(files) {
   });
 }
 
+// Imported media is placed on the timeline immediately so it can be edited
+// without an extra media-library selection step.
+function importEditableFiles(files) {
+  const list = sortFilesByName(files);
+  if (!list.length) return;
+  if (list.length === 1 && isVideoFile(list[0]) && canRestoreRecentExport(list[0])) {
+    restoreEditableProjectSnapshot();
+    const status = document.getElementById('projectImportStatus');
+    if (status) status.textContent = '최근 내보내기에서 원본 텍스트·자막·BGM 편집 레이어를 복원했습니다.';
+    showToast('원본 편집 레이어를 복원했습니다. 텍스트와 BGM을 다시 수정할 수 있습니다.', 'success', 4500);
+    return;
+  }
+  let accepted = 0;
+  list.forEach(file => {
+    if (isImageFile(file)) {
+      accepted++;
+      addImgMedia(file, { autoAddToTimeline: true });
+    } else if (isVideoFile(file)) {
+      accepted++;
+      addVidMedia(file, { autoAddToTimeline: true, imported: true });
+    } else {
+      showToast(`불러오기 탭에서는 영상·이미지만 지원합니다: ${file.name}`, 'error');
+    }
+  });
+  const status = document.getElementById('projectImportStatus');
+  if (status && accepted) {
+    status.textContent = `${accepted}개 파일을 불러오는 중입니다. 미디어 목록과 타임라인에 추가되면 바로 편집할 수 있습니다.`;
+  }
+}
+
+function addTextFromImportTab() {
+  addTextClip(null);
+  const textBtn = document.querySelector('.tool-btn[data-tab="text"]');
+  if (textBtn) switchToolTab('text', textBtn);
+}
+
+function muteImportedVideoAudio() {
+  const clips = S.clips.filter(c => c.type === 'video');
+  if (!clips.length) return showToast('먼저 영상을 불러와 주세요.', 'error');
+  saveState();
+  clips.forEach(c => {
+    c.vol = 0;
+    if (c.element) c.element.volume = 0;
+  });
+  renderPreview();
+  if (S.selId) selectClip(S.selId);
+  showToast('원본 영상 소리를 끄고 새 BGM을 넣을 수 있습니다.', 'success', 3500);
+}
+
 function sortFilesByName(files) {
   return [...files].sort((a, b) => a.name.localeCompare(
     b.name,
@@ -1605,7 +1717,8 @@ function sortFilesByName(files) {
   ));
 }
 
-function addImgMedia(file) {
+function addImgMedia(file, opt) {
+  opt = opt || {};
   const url = URL.createObjectURL(file);
   const img = new Image();
   img.src = url;
@@ -1613,6 +1726,7 @@ function addImgMedia(file) {
     const item = { id: S.nid++, type:'image', name:file.name, src:url, element:img, thumbnail:url, duration:3 };
     S.media.push(item);
     renderMediaGrid();
+    if (opt.autoAddToTimeline) addToTimeline(item);
   };
 }
 
@@ -1632,7 +1746,7 @@ function addVidMedia(file, opt) {
     }
     settled = true;
     URL.revokeObjectURL(url);
-    transcodeVideoForImport(file);
+    transcodeVideoForImport(file, opt);
   };
   vid.onloadedmetadata = () => {
     settled = true;
@@ -1647,6 +1761,7 @@ function addVidMedia(file, opt) {
       added = true;
       S.media.push(item);
       renderMediaGrid();
+      if (opt.autoAddToTimeline) addToTimeline(item);
     };
     vid.currentTime = item.duration ? Math.min(0.5, Math.max(0, item.duration / 2)) : 0;
     vid.onseeked = () => {
@@ -1656,6 +1771,9 @@ function addVidMedia(file, opt) {
     vid.onerror = null;
     setTimeout(addItem, 1200);
   };
+  // Explicitly start metadata loading; this is important for downloaded MP4
+  // files whose File.type is empty or reported as application/octet-stream.
+  try { vid.load(); } catch(e) {}
 }
 
 async function ensureImportFFmpeg() {
@@ -1673,7 +1791,8 @@ async function ensureImportFFmpeg() {
   return window._importFFmpeg;
 }
 
-async function transcodeVideoForImport(file) {
+async function transcodeVideoForImport(file, opt) {
+  opt = opt || {};
   const srcName = `input.${fileExt(file) || 'media'}`;
   const outName = 'import.mp4';
   showToast(`변환 후 가져오는 중: ${file.name}`, null, 5000);
@@ -1699,7 +1818,7 @@ async function transcodeVideoForImport(file) {
     const converted = new File([blob], file.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' });
     try { ff.FS('unlink', srcName); } catch(e) {}
     try { ff.FS('unlink', outName); } catch(e) {}
-    addVidMedia(converted, { converted: true });
+    addVidMedia(converted, { ...opt, converted: true });
     showToast(`지원 포맷으로 변환 완료: ${converted.name}`, 'success', 3500);
   } catch(e) {
     console.error(e);
@@ -1972,11 +2091,12 @@ function renderMediaGrid() {
 //  TIMELINE CORE
 // ══════════════════════════════════════════════
 function addToTimeline(item, startTime) {
+  const thumbnailDuration = getActiveThumbnailDuration();
   if (startTime == null) {
     const last = S.clips.filter(c=>c.track===0).reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
-    startTime = Math.max(THUMBNAIL_DURATION, last);
+    startTime = Math.max(thumbnailDuration, last);
   }
-  startTime = Math.max(THUMBNAIL_DURATION, startTime);
+  startTime = Math.max(thumbnailDuration, startTime);
   saveState();
   const clip = {
     id: S.nid++, type: item.type, name: item.name,
@@ -1993,10 +2113,11 @@ function addToTimeline(item, startTime) {
 
 function addMediaListToTimeline(items, startTime) {
   if (!items.length) return;
+  const thumbnailDuration = getActiveThumbnailDuration();
   if (startTime == null) {
     startTime = S.clips.filter(c=>c.track===0).reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
   }
-  startTime = Math.max(THUMBNAIL_DURATION, startTime);
+  startTime = Math.max(thumbnailDuration, startTime);
   saveState();
   let cursor = startTime;
   let lastClip = null;
@@ -2019,6 +2140,10 @@ function addMediaListToTimeline(items, startTime) {
 
 function getThumbnailMedia() {
   return S.media.find(item => item.id === S.thumbnailMediaId) || null;
+}
+
+function getActiveThumbnailDuration() {
+  return getThumbnailMedia() ? THUMBNAIL_DURATION : 0;
 }
 
 function chooseThumbnailFile() {
@@ -2140,7 +2265,7 @@ function recalcDuration() {
     .filter(c => c.track === 0 && (c.type === 'image' || c.type === 'video'))
     .reduce((m, c) => Math.max(m, c.startTime + c.duration), 0);
   const fallbackEnd = S.clips.reduce((m,c)=>Math.max(m,c.startTime+c.duration),0);
-  S.totalDur = Math.max(THUMBNAIL_DURATION, mediaEnd, fallbackEnd);
+  S.totalDur = Math.max(getActiveThumbnailDuration(), mediaEnd, fallbackEnd);
   if (S.t > S.totalDur) S.t = S.totalDur;
   document.getElementById('totalDurDsp').textContent = fmtTime(S.totalDur);
   document.getElementById('clipCountDsp').textContent = S.clips.filter(c=>c.track===0).length + '개';
@@ -2219,6 +2344,7 @@ function bindDrag(el, clip, startEv) {
     if (!moved && Math.abs(dx) > 3) { moved = true; saveState(); }
     if (moved) {
       clip.startTime = Math.max(minClipStart(clip), (sl + dx) / S.pxSec);
+      syncEffectTimingForTarget(clip);
       el.style.left = clip.startTime * S.pxSec + 'px';
     }
   };
@@ -2228,7 +2354,7 @@ function bindDrag(el, clip, startEv) {
 
 function minClipStart(clip) {
   return clip?.track === 0 && (clip.type === 'video' || clip.type === 'image')
-    ? THUMBNAIL_DURATION
+    ? getActiveThumbnailDuration()
     : 0;
 }
 
@@ -2268,6 +2394,7 @@ function applyGroupUniformDuration(targets, anchorId, newDuration, side, snapsho
         clip.startTime = Math.max(minClipStart(clip), end - duration);
         clip.duration = duration;
         syncSubTimingFromClip(clip);
+        syncEffectTimingForTarget(clip);
       });
       return;
     }
@@ -2282,6 +2409,7 @@ function applyGroupUniformDuration(targets, anchorId, newDuration, side, snapsho
       clip.startTime = cursor;
       clip.duration = duration;
       syncSubTimingFromClip(clip);
+      syncEffectTimingForTarget(clip);
       cursor += duration;
     });
   });
@@ -2308,6 +2436,7 @@ function bindResize(el, clip, handle, side) {
         clip.duration = Math.max(0.1, sd + dx/S.pxSec);
         el.style.width = Math.max(8, clip.duration * S.pxSec) + 'px';
         syncSubTimingFromClip(clip);
+        syncEffectTimingForTarget(clip);
       } else {
         const nd = Math.max(0.1, sd - dx/S.pxSec);
         clip.startTime = Math.max(minClipStart(clip), ss + (sd - nd));
@@ -2315,6 +2444,7 @@ function bindResize(el, clip, handle, side) {
         el.style.left = clip.startTime * S.pxSec + 'px';
         el.style.width = Math.max(8, nd * S.pxSec) + 'px';
         syncSubTimingFromClip(clip);
+        syncEffectTimingForTarget(clip);
       }
     };
     const mu = () => {
@@ -2528,7 +2658,17 @@ function updateCP(id, prop, val) {
   if (!c) return;
   if (prop === 'startTime') val = Math.max(minClipStart(c), val);
   c[prop] = val;
+  syncEffectTimingForTarget(c);
   recalcDuration(); renderTimeline(); renderPreview();
+}
+function updateClipVolume(id, value) {
+  const c = S.clips.find(c => c.id === id && c.type === 'video');
+  if (!c) return;
+  c.vol = Math.max(0, Math.min(1, Number(value) || 0));
+  if (c.element) c.element.volume = c.vol;
+  const label = document.getElementById('clipVolValue');
+  if (label) label.textContent = Math.round(c.vol * 100) + '%';
+  renderPreview();
 }
 function updateSubText(id, text) {
   const c = S.clips.find(c=>c.id===id);
@@ -2563,6 +2703,9 @@ function deleteClip(id) {
   const c = S.clips[i];
   if (c.type === 'subtitle' && c.subId) S.subs = S.subs.filter(s=>s.id!==c.subId);
   S.clips.splice(i,1);
+  if (c.type === 'video' || c.type === 'image') {
+    S.clips = S.clips.filter(effect => !(effect.type === 'effect' && effect.targetClipId === c.id));
+  }
   S.selId = null;
   recalcDuration(); renderTimeline(); renderPreview();
   document.getElementById('clipPropsArea').innerHTML =
@@ -2917,7 +3060,7 @@ document.addEventListener('keydown', ev => {
 // ══════════════════════════════════════════════
 //  EXPORT ENGINE
 // ══════════════════════════════════════════════
-const EXP = { fmt:'auto', cancelled:false, recorder:null };
+const EXP = { fmt:'ffmpeg', cancelled:false, recorder:null };
 
 function getExportDims() {
   // Compute export canvas size: scale current canvas aspect ratio to selected long-edge size
@@ -2955,13 +3098,9 @@ function closeExportModal() {
 
 function selExpFmt(el) {
   document.querySelectorAll('.exp-fmt-btn').forEach(b => b.classList.remove('selected'));
-  el.classList.add('selected');
-  EXP.fmt = el.dataset.fmt;
-  const notes = {
-    auto: '⚡ <b>빠른 내보내기:</b> 재생하면서 실시간 녹화합니다. 브라우저에 따라 WebM 또는 MP4로 저장됩니다. 인터넷 불필요.',
-    ffmpeg: '🎬 <b>FFmpeg MP4:</b> 최종 파일을 Video H.264(libx264), Audio AAC 코덱의 MP4로 인코딩합니다. CDN에서 FFmpeg를 로드합니다 (~30MB, 인터넷 필요).',
-  };
-  document.getElementById('expFmtNote').innerHTML = notes[EXP.fmt] || '';
+  if (el) el.classList.add('selected');
+  EXP.fmt = 'ffmpeg';
+  document.getElementById('expFmtNote').innerHTML = '<b>Compatibility MP4 only:</b> H.264 + AAC-LC, stereo, 44.1 kHz. No fast-export fallback.';
 }
 
 async function startExport() {
@@ -2970,6 +3109,10 @@ async function startExport() {
   const bitrate = parseInt(document.getElementById('expBitrate').value);
   const [expW, expH] = getExportDims();
   const requestedFmt = EXP.fmt;
+
+  // Keep the editable layer graph for the in-app "recent export" restore
+  // path. A flattened MP4 cannot recover text/BGM layers by itself.
+  EXPORT_CACHE.projectSnapshot = captureEditableProjectSnapshot();
 
   // Resize canvas to export resolution
   const origW = canvas.width, origH = canvas.height;
@@ -2980,31 +3123,14 @@ async function startExport() {
   document.getElementById('expProgress').style.display = '';
   try {
     await ensureExportTtsReady();
-    if (EXP.fmt === 'ffmpeg' && projectHasExportAudio()) {
-      try {
-        const recorded = await expMediaRecorder(fps, bitrate, { returnBlob:true, progressMax:72 });
-        if (!EXP.cancelled && recorded?.blob) {
-          await transcodeRecordedExport(recorded.blob, recorded.ext, bitrate);
-        }
-      } catch(e) {
-        if (EXP.cancelled) return;
-        console.warn('FFmpeg export failed, falling back to fast export:', e);
-        setExpProg(0, 'FFmpeg 내보내기 실패 · 빠른 내보내기로 다시 시도합니다...');
-        await sleep(700);
-        await expMediaRecorder(fps, bitrate);
-      }
-    } else if (EXP.fmt === 'ffmpeg') {
-      try {
-        await expFFmpeg(fps, bitrate);
-      } catch(e) {
-        if (EXP.cancelled) return;
-        console.warn('FFmpeg export failed, falling back to fast export:', e);
-        setExpProg(0, 'FFmpeg 내보내기 실패 · 빠른 내보내기로 다시 시도합니다...');
-        await sleep(700);
-        await expMediaRecorder(fps, bitrate);
-      }
+    EXP.fmt = 'ffmpeg';
+    if (projectHasExportAudio()) {
+      const recorded = await expMediaRecorder(fps, bitrate, { returnBlob:true, progressMax:72 });
+      if (EXP.cancelled) return;
+      if (!recorded?.blob) throw new Error('The intermediate recording did not contain media data.');
+      await transcodeRecordedExport(recorded.blob, recorded.ext, bitrate);
     } else {
-      await expMediaRecorder(fps, bitrate);
+      await expFFmpeg(fps, bitrate);
     }
   } catch(e) {
     if (!EXP.cancelled) showToast('내보내기 실패:\n' + e.message, 'error', 5000);
@@ -3134,11 +3260,15 @@ function createExportAudioMixer(stream) {
     }
     tracks.push({
       audio,
+      gainNode: gain,
+      baseVolume: opt.volume == null ? 1 : opt.volume,
+      clipId: opt.clipId == null ? null : opt.clipId,
       start: Math.max(0, opt.start || 0),
       end: Math.max(0, opt.end == null ? S.totalDur : opt.end),
       offset: Math.max(0, opt.offset || 0),
       loop: !!opt.loop,
       duration: opt.duration || 0,
+      loopDuration: Math.max(0, opt.loopDuration || 0),
       active: false,
     });
     created.push(audio);
@@ -3154,6 +3284,7 @@ function createExportAudioMixer(stream) {
         end: c.startTime + c.duration,
         offset: 0,
         volume: c.vol != null ? c.vol : 1,
+        clipId: c.id,
       });
     });
 
@@ -3161,9 +3292,13 @@ function createExportAudioMixer(stream) {
     if (!item.element || item.duration <= 0) return;
     addMedia(item.element.currentSrc || item.element.src, {
       start: item.start || 0,
-      end: getBGMEnd(item),
+      end: item.loop
+        ? getBGMEnd(item)
+        : Math.min(getBGMEnd(item), (item.start || 0) + getBGMSourceDuration(item)),
+      offset: getBGMSourceStart(item),
       loop: item.loop,
       duration: item.duration,
+      loopDuration: getBGMSourceDuration(item),
       volume: item.vol,
     });
   });
@@ -3185,17 +3320,30 @@ function createExportAudioMixer(stream) {
       if (ctxAudio.state === 'suspended') await ctxAudio.resume();
     },
     sync(t) {
+      const transition = getAudioTransitionAt(t);
       tracks.forEach(track => {
-        const inRange = t >= track.start && t < track.end;
+        const transitionNext = !!(transition && track.clipId != null && transition.next?.id === track.clipId);
+        const transitionFrom = !!(transition && track.clipId != null && transition.from?.id === track.clipId);
+        const inRange = (t >= track.start && t < track.end) || transitionNext;
         if (!inRange) {
           if (track.active) {
             track.audio.pause();
             track.active = false;
           }
+          track.gainNode.gain.value = 0;
           return;
         }
-        let at = t - track.start + track.offset;
-        if (track.loop && track.duration > 0) at = at % track.duration;
+        const localTime = Math.max(0, t - track.start);
+        let at = localTime + track.offset;
+        if (track.loop && track.loopDuration > 0) {
+          at = track.offset + (localTime % track.loopDuration);
+        } else if (track.loop && track.duration > 0) {
+          at = (localTime + track.offset) % track.duration;
+        }
+        let mix = 1;
+        if (transitionFrom) mix *= (1 - transition.alpha);
+        if (transitionNext) mix *= transition.alpha;
+        track.gainNode.gain.value = track.baseVolume * Math.max(0, Math.min(1, mix));
         if (Number.isFinite(at) && Math.abs(track.audio.currentTime - at) > 0.18) {
           try { track.audio.currentTime = Math.max(0, at); } catch(e) {}
         }
@@ -3260,9 +3408,17 @@ async function expMediaRecorder(fps, bitrate, opt) {
   recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
 
   try {
+    // Do not hold the canvas recorder behind a slow BGM decode.  Some MP3
+    // files take a couple of seconds to reach canplay; waiting here makes the
+    // first part of the exported video look frozen even though the timeline
+    // has already been started.  The mixer keeps preparing in the background
+    // and sync() will attach the decoded audio on the next tick.
+    let mixerReady = Promise.resolve();
     if (mixer?.count) {
       setExpProg(0, '오디오 준비 중...');
-      await mixer.prepare();
+      mixerReady = mixer.prepare().catch(err => {
+        console.warn('export audio preparation delayed:', err);
+      });
     }
     await mixer?.start();
     seekTo(0);
@@ -3277,12 +3433,15 @@ async function expMediaRecorder(fps, bitrate, opt) {
       recorder.start(200);
 
       setExpProg(1, '녹화 시작 준비 중...');
-      setTimeout(() => {
+      const beginCapture = () => {
         if (EXP.cancelled) { try { recorder.stop(); } catch(e){} return; }
         seekTo(0);
         renderPreview();
-        mixer?.sync(0);
         play();
+        // Start the audio clock in the same turn as the video clock.  This
+        // avoids the browser waiting for the first BGM packet before it emits
+        // canvas frames, while preserving the requested source offset.
+        mixer?.sync(0);
 
         const startMs = Date.now();
         const totalMs = S.totalDur * 1000;
@@ -3301,8 +3460,14 @@ async function expMediaRecorder(fps, bitrate, opt) {
             setTimeout(() => { try { recorder.stop(); } catch(e){} }, 700);
           }
         }, 80);
-      }, 120);
+      };
+      // MediaRecorder is ready immediately after start(); no artificial
+      // 120 ms hold is needed and it compounds with slow audio startup.
+      beginCapture();
     });
+    // Keep the promise observed so a late decode failure never becomes an
+    // unhandled rejection.  Audio that did decode is still included.
+    await mixerReady;
   } finally {
     mixer?.cleanup();
     EXP.suppressLiveAudio = oldSuppressLiveAudio;
@@ -3327,7 +3492,15 @@ async function expMediaRecorder(fps, bitrate, opt) {
   await sleep(1800);
 }
 
+function ffmpegIsolationReady() {
+  return globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== 'undefined';
+}
+document.documentElement.dataset.ffmpegIsolation = ffmpegIsolationReady() ? 'ready' : 'blocked';
+
 async function createExportFFmpeg(progressBase, progressSpan) {
+  if (!ffmpegIsolationReady()) {
+    throw new Error('FFmpeg 실행 환경이 준비되지 않았습니다. 3210 서버를 재시작한 뒤 새로고침해 주세요.');
+  }
   if (!window._ffLoaded) {
     await loadScript('https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js');
     window._ffLoaded = true;
@@ -3354,7 +3527,7 @@ async function transcodeRecordedExport(blob, ext, bitrate) {
   if (EXP.cancelled) return;
 
   const inputName = `recorded.${ext || 'webm'}`;
-  const outName = 'video_export_h264_aac.mp4';
+  const outName = 'video_export_compatible_h264_aac.mp4';
   try { ff.FS('unlink', inputName); } catch(e) {}
   try { ff.FS('unlink', outName); } catch(e) {}
 
@@ -3363,15 +3536,20 @@ async function transcodeRecordedExport(blob, ext, bitrate) {
   await ff.run(
     '-i', inputName,
     '-map', '0:v:0',
-    '-map', '0:a?',
+    '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
     '-b:v', `${Math.floor(bitrate/1000)}k`,
     '-pix_fmt', 'yuv420p',
+    '-tag:v', 'avc1',
     '-c:a', 'aac',
-    '-b:a', '192k',
-    '-ar', '48000',
+    '-profile:a', 'aac_low',
+    '-b:a', '160k',
+    '-ar', '44100',
+    '-ac', '2',
+    '-af', 'aresample=async=1:first_pts=0',
     '-movflags', '+faststart',
+    '-f', 'mp4',
     '-shortest',
     outName
   );
@@ -3384,7 +3562,7 @@ async function transcodeRecordedExport(blob, ext, bitrate) {
   try { ff.FS('unlink', outName); } catch(e) {}
 
   setExpProg(100, '완료! H.264(libx264) + AAC MP4 파일을 다운로드합니다.');
-  downloadBlob(mp4, 'video_export_h264_aac.mp4');
+  downloadBlob(mp4, 'video_export_compatible_h264_aac.mp4');
   await sleep(1800);
 }
 
@@ -3450,16 +3628,95 @@ async function expFFmpeg(fps, bitrate) {
   await sleep(1800);
 }
 
+function captureEditableProjectSnapshot() {
+  return {
+    media: S.media.slice(),
+    clips: S.clips.map(c => ({ ...c })),
+    subs: S.subs.map(s => ({ ...s })),
+    bgmItems: BGM.items.slice(),
+    bgmActiveId: BGM.activeId,
+    thumbnailMediaId: S.thumbnailMediaId,
+    nid: S.nid,
+    t: S.t,
+    autoTransition: S.autoTransition,
+    transitionDur: S.transitionDur,
+  };
+}
+
+function canRestoreRecentExport(file) {
+  const snap = EXPORT_CACHE.projectSnapshot;
+  if (!snap || !snap.clips?.length || !file) return false;
+  return file === EXPORT_CACHE.file || !!(file.name && file.name === EXPORT_CACHE.exportName);
+}
+
+function restoreEditableProjectSnapshot() {
+  const snap = EXPORT_CACHE.projectSnapshot;
+  if (!snap) return false;
+  BGM.items.forEach(item => { try { item.element?.pause(); } catch(e) {} });
+  S.media = snap.media.slice();
+  S.clips = snap.clips.map(c => ({ ...c }));
+  S.subs = snap.subs.map(s => ({ ...s }));
+  S.thumbnailMediaId = snap.thumbnailMediaId ?? null;
+  S.nid = Math.max(snap.nid || 1, ...S.clips.map(c => Number(c.id) || 0), ...S.media.map(m => Number(m.id) || 0)) + 1;
+  S.t = Math.max(0, snap.t || 0);
+  S.autoTransition = snap.autoTransition !== false;
+  S.transitionDur = snap.transitionDur || 0.45;
+  S.selId = null;
+  S.selIds.clear();
+  BGM.items = snap.bgmItems.slice();
+  BGM.activeId = snap.bgmActiveId || (BGM.items[0]?.id ?? null);
+  renderMediaGrid();
+  recalcDuration();
+  renderTimeline();
+  renderBGMTrack();
+  syncBGMInputs();
+  renderPreview();
+  const focus = S.clips.find(c => c.type === 'text' || c.type === 'subtitle') || S.clips[0];
+  if (focus) selectClip(focus.id);
+  return true;
+}
+
 function downloadBlob(blob, filename) {
+  if (blob && blob.size > 0) {
+    try {
+      EXPORT_CACHE.file = new File([blob], filename, { type: blob.type || 'video/mp4' });
+      EXPORT_CACHE.importedName = '';
+      EXPORT_CACHE.exportName = filename;
+      ['reimportExportBtn', 'importRecentBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+          btn.style.display = '';
+          btn.title = `${filename}을 다시 편집합니다.`;
+        }
+      });
+    } catch(e) {}
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+
+function reimportLastExport() {
+  const file = EXPORT_CACHE.file;
+  if (!file || !file.size) return showToast('먼저 영상을 내보내 주세요.', 'error');
+  if (EXPORT_CACHE.importedName === file.name) {
+    return showToast('최근 내보낸 영상은 이미 미디어 목록에 있습니다.');
+  }
+  EXPORT_CACHE.importedName = file.name;
+  if (canRestoreRecentExport(file)) {
+    restoreEditableProjectSnapshot();
+    showToast('원본 텍스트·자막·BGM 편집 레이어를 복원했습니다.', 'success', 4500);
+    return;
+  }
+  addVidMedia(file, { exported: true, autoAddToTimeline: true });
+  showToast(`내보낸 영상을 타임라인에 다시 불러오는 중: ${file.name}`, null, 3500);
+}
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
+    s.crossOrigin = 'anonymous';
     s.src = src; s.onload = res; s.onerror = () => rej(new Error(`스크립트 로드 실패: ${src}`));
     document.head.appendChild(s);
   });
@@ -3472,7 +3729,8 @@ function switchToolTab(tab, btn) {
   document.querySelectorAll('.tool-btn[data-tab]').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.querySelectorAll('.panel-tab').forEach(p => p.classList.remove('active'));
-  if (tab === 'text') document.getElementById('tabText').classList.add('active');
+  if (tab === 'import') document.getElementById('tabImport').classList.add('active');
+  else if (tab === 'text') document.getElementById('tabText').classList.add('active');
   else if (tab === 'effect') document.getElementById('tabEffect').classList.add('active');
   else document.getElementById('tabMedia').classList.add('active');
 }
@@ -3940,6 +4198,41 @@ selectClip = function(id) {
     return;
   }
 
+  if (clip.type === 'video') {
+    updateTextSelBox();
+    const area = document.getElementById('clipPropsArea');
+    const vol = Math.round((clip.vol == null ? 1 : clip.vol) * 100);
+    area.innerHTML = `
+      <div class="prop-grp">
+        <div class="prop-lbl">불러온 영상 오디오</div>
+        <div class="prop-val" style="font-size:10px;color:#8fb7d6;line-height:1.45">
+          원본 영상에 포함된 소리입니다. 기존 BGM을 바꾸려면 0%로 낮춘 뒤 새 BGM을 추가하세요.
+        </div>
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">시작 시간 (초)</div>
+        <input class="prop-inp" type="number" step="0.1" min="${minClipStart(clip)}" value="${clip.startTime.toFixed(2)}"
+          onchange="updateCP(${id},'startTime',+this.value)">
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">지속 시간 (초)</div>
+        <input class="prop-inp" type="number" step="0.1" min="0.1" value="${clip.duration.toFixed(2)}"
+          onchange="updateCP(${id},'duration',+this.value)">
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">원본 오디오 볼륨 <span id="clipVolValue" style="color:#aaa">${vol}%</span></div>
+        <input type="range" min="0" max="100" value="${vol}" style="width:100%;accent-color:#5ab4ff;cursor:pointer"
+          oninput="updateClipVolume(${id},+this.value)">
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">텍스트·효과</div>
+        <div class="prop-val" style="font-size:10px;color:#777;line-height:1.45">텍스트 탭에서 새 텍스트를 추가하고, 편집효과 탭에서 이 컷에 효과를 적용할 수 있습니다.</div>
+      </div>
+      <button class="del-btn" onclick="deleteClip(${id})">🗑️ 영상 컷 삭제</button>
+    `;
+    return;
+  }
+
   if (clip.type !== 'text') { updateTextSelBox(); return; }
   const p = TEXT_PRESETS.find(x => x.id === clip.presetId) || TEXT_PRESETS[0];
   const quickPresets = TEXT_PRESETS.filter(px => px.cat === p.cat).slice(0, 6);
@@ -4179,7 +4472,7 @@ renderTimeline = function() {
   ];
   tracks.forEach(t => t && t.querySelectorAll('.clip,.thumbnail-slot').forEach(c => c.remove()));
 
-  tracks[0].appendChild(buildThumbnailSlot());
+  if (getThumbnailMedia()) tracks[0].appendChild(buildThumbnailSlot());
 
   S.clips.forEach(clip => {
     const tr = tracks[clip.track];
@@ -4209,10 +4502,12 @@ loadSRT = function(file) {
   r.onload = e => {
     const entries = parseSRT(e.target.result);
     if (!entries.length) return showToast('SRT 파일에서 자막을 찾을 수 없습니다.', 'error');
-    entries.forEach(en => {
-      en.start += THUMBNAIL_DURATION;
-      en.end += THUMBNAIL_DURATION;
-    });
+    if (getThumbnailMedia()) {
+      entries.forEach(en => {
+        en.start += THUMBNAIL_DURATION;
+        en.end += THUMBNAIL_DURATION;
+      });
+    }
     saveState();
     S.subs = S.subs.concat(entries);
     entries.forEach(en => {
@@ -4506,7 +4801,8 @@ function fxIntroOut(c,W,H,lt,dur){
 // getVideoMotion — reads active effect clips and returns {scale,ox,oy,rot,alpha}
 function getVideoMotion() {
   const m = { scale:1, ox:0, oy:0, rot:0, alpha:1 };
-  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration).forEach(clip=>{
+  const video = getVideoClipAt(S.t);
+  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration&&effectMatchesVideo(c, video)).forEach(clip=>{
     const preset = EFFECT_PRESETS.find(p=>p.id===clip.effectId);
     if (!preset||!preset.motion) return;
     const lt = S.t - clip.startTime;
@@ -4677,6 +4973,30 @@ function filterEffects(q) {
   buildEffectsPanel();
 }
 
+// Every effect clip is owned by exactly one video/image clip. Keeping the
+// timing linked means moving or trimming a cut cannot leave its effect behind.
+function syncEffectTimingForTarget(target) {
+  if (!target || target.track !== 0 || (target.type !== 'video' && target.type !== 'image')) return;
+  S.clips.forEach(effect => {
+    if (effect.type !== 'effect' || effect.targetClipId !== target.id) return;
+    effect.startTime = target.startTime;
+    effect.duration = target.duration;
+  });
+}
+
+function getVideoClipAt(time) {
+  return S.clips.find(c =>
+    c.track === 0 && (c.type === 'video' || c.type === 'image') &&
+    time >= c.startTime && time < c.startTime + c.duration
+  ) || null;
+}
+
+function effectMatchesVideo(effect, video) {
+  if (!effect || effect.type !== 'effect' || !video) return false;
+  if (effect.targetClipId != null) return effect.targetClipId === video.id;
+  return effectBelongsToTarget(effect, video);
+}
+
 function getEffectTargetClips() {
   const selected = getSelectedClips().filter(c => c && c.track === 0 && (c.type === 'image' || c.type === 'video'));
   if (selected.length) return selected;
@@ -4705,7 +5025,7 @@ function effectBelongsToTarget(effect, target) {
 
 function addEffectClip(preset) {
   preset=preset||EFFECT_PRESETS.find(p=>p.id===selEffectId)||EFFECT_PRESETS[0];
-  const targets = getEffectTargetClips();
+  const targets = [...new Map(getEffectTargetClips().map(target => [target.id, target])).values()];
   if (!targets.length) return showToast('효과를 적용할 이미지나 영상을 먼저 선택하세요.', 'error');
   saveState();
 
@@ -4742,7 +5062,8 @@ function addEffectClip(preset) {
 
 // ── Draw effect clips on canvas ──
 function drawEffectClips(W,H) {
-  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration).forEach(clip=>{
+  const video = getVideoClipAt(S.t);
+  S.clips.filter(c=>c.type==='effect'&&S.t>=c.startTime&&S.t<c.startTime+c.duration&&effectMatchesVideo(c, video)).forEach(clip=>{
     const preset=EFFECT_PRESETS.find(p=>p.id===clip.effectId);
     if(!preset) return;
     try { preset.render(ctx,W,H,S.t-clip.startTime,clip.duration); } catch(e){}
@@ -6067,5 +6388,547 @@ updateTimeDsp();
 saveState();       // initial state so first undo works
 _updateUndoRedoBtns();
 </script>
+
+<script id="bgm-source-range-patch">
+(function installBGMSourceRangePatch() {
+  if (window.__bgmSourceRangeInstalled) return;
+  window.__bgmSourceRangeInstalled = true;
+
+  const info = document.getElementById('bgmInfo');
+  const loopLabel = document.getElementById('bgmLoop')?.closest('label');
+  if (info && loopLabel && !document.getElementById('bgmSourceRangeBox')) {
+    const box = document.createElement('div');
+    box.id = 'bgmSourceRangeBox';
+    box.style.cssText = 'margin:7px 0;padding:7px;background:#151515;border:1px solid #303030;border-radius:6px';
+    box.innerHTML = `
+      <div style="font-size:10px;color:#aaa;margin-bottom:5px">&#50896;&#48376; BGM &#49324;&#50857; &#44396;&#44036; (&#52488;)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <label style="font-size:10px;color:#666">&#50896;&#48376; &#49884;&#51089;
+          <input id="bgmSourceStartInput" type="number" min="0" step="0.1" value="0" class="prop-inp"
+            style="margin-top:2px;font-size:10px;padding:4px 6px" onchange="setBGMSourceStart(this.value)">
+        </label>
+        <label style="font-size:10px;color:#666">&#50896;&#48376; &#45149;
+          <input id="bgmSourceEndInput" type="number" min="0.1" step="0.1" value="0.1" class="prop-inp"
+            style="margin-top:2px;font-size:10px;padding:4px 6px" onchange="setBGMSourceEnd(this.value)">
+        </label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:5px">
+        <input id="bgmSourceStartRange" type="range" min="0" max="1" step="0.1" value="0"
+          style="width:100%;accent-color:#5ab4ff" oninput="setBGMSourceStart(this.value)">
+        <input id="bgmSourceEndRange" type="range" min="0.1" max="1" step="0.1" value="0.1"
+          style="width:100%;accent-color:#7fcf9f" oninput="setBGMSourceEnd(this.value)">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+        <button type="button" onclick="previewBGMSourceRange()"
+          style="border:1px solid #3a5f7a;background:#1b3040;color:#8ecfff;border-radius:4px;padding:4px 7px;font-size:10px;cursor:pointer">&#9654; &#49440;&#53469; &#44396;&#44036; &#48120;&#47532;&#46307;&#44592;</button>
+        <span id="bgmSourceDuration" style="font-size:10px;color:#777"></span>
+      </div>`;
+    info.insertBefore(box, loopLabel);
+  }
+
+  function ensureSourceRange(item) {
+    if (!item) return null;
+    const duration = Math.max(0, Number(item.duration) || 0);
+    const timelineLength = Math.max(0.1, getBGMEnd(item) - (item.start || 0));
+    if (!Number.isFinite(item.sourceStart)) item.sourceStart = 0;
+    item.sourceStart = Math.max(0, Math.min(item.sourceStart, Math.max(0, duration - 0.1)));
+    if (!Number.isFinite(item.sourceEnd) || item.sourceEnd <= item.sourceStart) {
+      item.sourceEnd = duration > 0
+        ? Math.min(duration, item.sourceStart + timelineLength)
+        : item.sourceStart + timelineLength;
+    }
+    if (duration > 0) item.sourceEnd = Math.min(duration, item.sourceEnd);
+    item.sourceEnd = Math.max(item.sourceStart + 0.1, item.sourceEnd);
+    return item;
+  }
+
+  window.getBGMSourceStart = function(item = getActiveBGM()) {
+    item = ensureSourceRange(item);
+    return item ? item.sourceStart : 0;
+  };
+
+  window.getBGMSourceEnd = function(item = getActiveBGM()) {
+    item = ensureSourceRange(item);
+    return item ? item.sourceEnd : 0;
+  };
+
+  window.getBGMSourceDuration = function(item = getActiveBGM()) {
+    return Math.max(0.1, getBGMSourceEnd(item) - getBGMSourceStart(item));
+  };
+
+  window.syncBGMSourceInputs = function() {
+    const item = ensureSourceRange(getActiveBGM());
+    const startInput = document.getElementById('bgmSourceStartInput');
+    const endInput = document.getElementById('bgmSourceEndInput');
+    const startRange = document.getElementById('bgmSourceStartRange');
+    const endRange = document.getElementById('bgmSourceEndRange');
+    const durationText = document.getElementById('bgmSourceDuration');
+    const max = Math.max(0.1, Number(item?.duration) || 0.1);
+    const sourceStart = item ? getBGMSourceStart(item) : 0;
+    const sourceEnd = item ? getBGMSourceEnd(item) : 0.1;
+    [startInput, startRange].forEach(el => {
+      if (!el) return;
+      el.max = Math.max(0, max - 0.1).toFixed(1);
+      el.value = sourceStart.toFixed(1);
+    });
+    [endInput, endRange].forEach(el => {
+      if (!el) return;
+      el.max = max.toFixed(1);
+      el.value = sourceEnd.toFixed(1);
+    });
+    if (durationText) durationText.textContent = item
+      ? `\uC120\uD0DD ${fmtTime(getBGMSourceDuration(item))} / \uC804\uCCB4 ${fmtTime(max)}`
+      : '';
+  };
+
+  function fitTimelineToSource(item) {
+    if (!item) return;
+    const sourceLength = getBGMSourceDuration(item);
+    const maxEnd = S.totalDur > 0 ? S.totalDur : item.start + sourceLength;
+    item.end = Math.max(item.start + 0.1, Math.min(maxEnd, item.start + sourceLength));
+  }
+
+  window.setBGMSourceStart = function(value) {
+    const item = ensureSourceRange(getActiveBGM());
+    if (!item) return;
+    stopBGMSourcePreview();
+    const oldLength = getBGMSourceDuration(item);
+    const maxStart = Math.max(0, item.duration - 0.1);
+    item.sourceStart = Math.max(0, Math.min(Number(value) || 0, maxStart));
+    item.sourceEnd = Math.min(item.duration, item.sourceStart + oldLength);
+    if (item.sourceEnd - item.sourceStart < 0.1) item.sourceStart = Math.max(0, item.sourceEnd - 0.1);
+    fitTimelineToSource(item);
+    syncBGMSourceInputs();
+    renderBGMTrack();
+    syncBGMPlayback();
+  };
+
+  window.setBGMSourceEnd = function(value) {
+    const item = ensureSourceRange(getActiveBGM());
+    if (!item) return;
+    stopBGMSourcePreview();
+    item.sourceEnd = Math.max(item.sourceStart + 0.1, Math.min(Number(value) || item.sourceStart + 0.1, item.duration || Infinity));
+    fitTimelineToSource(item);
+    syncBGMSourceInputs();
+    renderBGMTrack();
+    syncBGMPlayback();
+  };
+
+  window.stopBGMSourcePreview = function() {
+    if (!BGM.sourcePreview) return;
+    try { BGM.sourcePreview.pause(); BGM.sourcePreview.src = ''; } catch(e) {}
+    BGM.sourcePreview = null;
+  };
+
+  window.previewBGMSourceRange = function() {
+    const item = ensureSourceRange(getActiveBGM());
+    if (!item) return;
+    if (BGM.sourcePreview) {
+      stopBGMSourcePreview();
+      return;
+    }
+    const audio = new Audio(item.url || item.element?.src);
+    BGM.sourcePreview = audio;
+    audio.volume = item.vol == null ? BGM.vol : item.vol;
+    audio.onloadedmetadata = () => {
+      audio.currentTime = getBGMSourceStart(item);
+      audio.play().catch(() => stopBGMSourcePreview());
+    };
+    audio.ontimeupdate = () => {
+      if (audio.currentTime >= getBGMSourceEnd(item) - 0.03) stopBGMSourcePreview();
+    };
+    audio.onended = stopBGMSourcePreview;
+  };
+
+  const originalSyncInputs = window.syncBGMInputs;
+  window.syncBGMInputs = function() {
+    const result = originalSyncInputs.apply(this, arguments);
+    syncBGMSourceInputs();
+    return result;
+  };
+
+  const originalRenderTrack = window.renderBGMTrack;
+  window.renderBGMTrack = function() {
+    const result = originalRenderTrack.apply(this, arguments);
+    BGM.items.forEach(item => {
+      const label = document.querySelector(`.bgm-bar[data-bid="${item.id}"] .clip-label`);
+      if (label) label.textContent += ` | \uC6D0\uBCF8 ${fmtTime(getBGMSourceStart(item))}-${fmtTime(getBGMSourceEnd(item))}`;
+    });
+    return result;
+  };
+
+  const originalLoadBGM = window.loadBGM;
+  window.loadBGM = function(file) {
+    originalLoadBGM(file);
+    const item = getActiveBGM();
+    if (!item) return;
+    item.sourceStart = 0;
+    item.sourceEnd = 0;
+    item.element.loop = false;
+    const finish = () => {
+      item.duration = Number(item.element.duration) || item.duration || 0;
+      ensureSourceRange(item);
+      fitTimelineToSource(item);
+      syncBGMInputs();
+      renderBGMTrack();
+    };
+    if (item.element.readyState >= 1) finish();
+    else item.element.addEventListener('loadedmetadata', finish, { once: true });
+  };
+
+  const originalSetActive = window.setActiveBGM;
+  window.setActiveBGM = function() {
+    const result = originalSetActive.apply(this, arguments);
+    syncBGMSourceInputs();
+    return result;
+  };
+
+  const originalSetLoop = window.setBGMLoop;
+  window.setBGMLoop = function(checked) {
+    const result = originalSetLoop.call(this, checked);
+    const item = getActiveBGM();
+    if (item?.element) item.element.loop = false;
+    return result;
+  };
+
+  const originalRemove = window.removeBGM;
+  window.removeBGM = function() {
+    stopBGMSourcePreview();
+    const result = originalRemove.apply(this, arguments);
+    syncBGMSourceInputs();
+    return result;
+  };
+
+  window.bgmLocalTime = function(item, t) {
+    const local = Math.max(0, t - item.start);
+    const sourceStart = getBGMSourceStart(item);
+    const sourceLength = getBGMSourceDuration(item);
+    if (item.loop && sourceLength > 0) return sourceStart + (local % sourceLength);
+    return Math.min(sourceStart + local, getBGMSourceEnd(item) - 0.01);
+  };
+
+  window.syncBGMPlayback = function() {
+    BGM.items.forEach(item => {
+      ensureSourceRange(item);
+      const timelineLocal = S.t - item.start;
+      const sourceLength = getBGMSourceDuration(item);
+      const inRange = S.playing && S.t >= item.start && S.t < getBGMEnd(item) && (item.loop || timelineLocal < sourceLength);
+      if (!inRange) {
+        if (!item.element.paused) item.element.pause();
+        return;
+      }
+      const at = bgmLocalTime(item, S.t);
+      if (Number.isFinite(at) && Math.abs(item.element.currentTime - at) > 0.25) {
+        try { item.element.currentTime = at; } catch(e) {}
+      }
+      item.element.loop = false;
+      item.element.volume = item.vol;
+      item.element.play().catch(() => {});
+    });
+  };
+
+  syncBGMSourceInputs();
+})();
+</script>
+
+<style id="bgm-inline-source-style">
+.bgm-bar .clip-label {
+  position: absolute; left: 8px; right: 8px; top: 2px; height: 13px;
+  z-index: 4; padding: 0; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none; line-height: 13px;
+}
+.bgm-source-strip {
+  position: absolute; left: 6px; right: 6px; bottom: 2px; height: 10px;
+  z-index: 7; overflow: hidden; border-radius: 3px;
+  background: repeating-linear-gradient(90deg,#102218 0,#102218 3px,#1b3828 3px,#1b3828 5px);
+  border: 1px solid #315a42; cursor: crosshair;
+}
+.bgm-source-window {
+  position: absolute; top: 0; bottom: 0; min-width: 2px;
+  background: linear-gradient(90deg,#2b8a57,#43b56f);
+  border-left: 2px solid #ffd36a; border-right: 2px solid #ffd36a;
+  box-shadow: 0 0 0 1px #9affbd55 inset; cursor: grab;
+}
+.bgm-source-window.dragging { cursor: grabbing; }
+.bgm-source-handle {
+  position: absolute; top: 0; bottom: 0; width: 8px; z-index: 2;
+  background: rgba(255,211,106,.35); cursor: ew-resize;
+}
+.bgm-source-handle.left { left: -2px; }
+.bgm-source-handle.right { right: -2px; }
+</style>
+<script id="bgm-inline-source-patch">
+(function installInlineBGMSourceSelector() {
+  if (window.__bgmInlineSourceInstalled) return;
+  window.__bgmInlineSourceInstalled = true;
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function fitTimelineLength(item) {
+    const sourceLength = getBGMSourceDuration(item);
+    const limit = S.totalDur > 0 ? S.totalDur : item.start + sourceLength;
+    item.end = Math.max(item.start + 0.1, Math.min(limit, item.start + sourceLength));
+  }
+
+  function paintSelector(bar, item) {
+    const strip = bar.querySelector('.bgm-source-strip');
+    const win = bar.querySelector('.bgm-source-window');
+    if (!strip || !win) return;
+    const duration = Math.max(0.1, Number(item.duration) || 0.1);
+    const sourceStart = getBGMSourceStart(item);
+    const sourceEnd = getBGMSourceEnd(item);
+    win.style.left = `${clamp(sourceStart / duration * 100, 0, 100)}%`;
+    win.style.width = `${clamp((sourceEnd - sourceStart) / duration * 100, 0.05, 100)}%`;
+    const label = bar.querySelector('.clip-label');
+    if (label) label.textContent = `\uD83C\uDFB5 ${item.name} \u00B7 ${fmtTime(sourceStart)}-${fmtTime(sourceEnd)}`;
+    bar.title = `\uC544\uB798 \uC120\uD0DD \uB760: \uC6D0\uBCF8 BGM \uAD6C\uAC04 \uC870\uC808 | \uC704\uCABD: \uD0C0\uC784\uB77C\uC778 \uC704\uCE58 \uC774\uB3D9`;
+  }
+
+  function applySourceRange(bar, item, start, end) {
+    const duration = Math.max(0.1, Number(item.duration) || 0.1);
+    item.sourceStart = clamp(start, 0, Math.max(0, duration - 0.1));
+    item.sourceEnd = clamp(end, item.sourceStart + 0.1, duration);
+    fitTimelineLength(item);
+    syncBGMSourceInputs();
+    syncBGMPlayback();
+    paintSelector(bar, item);
+  }
+
+  function bindSelector(bar, item) {
+    if (!bar || bar.querySelector('.bgm-source-strip')) return;
+    const strip = document.createElement('div');
+    strip.className = 'bgm-source-strip';
+    strip.innerHTML = '<div class="bgm-source-window"><div class="bgm-source-handle left"></div><div class="bgm-source-handle right"></div></div>';
+    bar.appendChild(strip);
+    const win = strip.querySelector('.bgm-source-window');
+
+    strip.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setActiveBGM(item.id, false);
+      const rect = strip.getBoundingClientRect();
+      const duration = Math.max(0.1, Number(item.duration) || 0.1);
+      const originalStart = getBGMSourceStart(item);
+      const originalEnd = getBGMSourceEnd(item);
+      const originalLength = Math.max(0.1, originalEnd - originalStart);
+      const startX = ev.clientX;
+      let mode = 'place';
+      if (ev.target.classList.contains('bgm-source-handle')) {
+        mode = ev.target.classList.contains('left') ? 'left' : 'right';
+      } else if (ev.target.closest('.bgm-source-window')) {
+        mode = 'move';
+      }
+
+      if (mode === 'place') {
+        const center = clamp((ev.clientX - rect.left) / Math.max(1, rect.width), 0, 1) * duration;
+        let nextStart = clamp(center - originalLength / 2, 0, Math.max(0, duration - originalLength));
+        applySourceRange(bar, item, nextStart, nextStart + originalLength);
+        mode = 'move';
+      }
+      win.classList.add('dragging');
+
+      const mm = moveEv => {
+        moveEv.preventDefault();
+        const dxSeconds = (moveEv.clientX - startX) / Math.max(1, rect.width) * duration;
+        if (mode === 'left') {
+          applySourceRange(bar, item, originalStart + dxSeconds, originalEnd);
+        } else if (mode === 'right') {
+          applySourceRange(bar, item, originalStart, originalEnd + dxSeconds);
+        } else {
+          const nextStart = clamp(originalStart + dxSeconds, 0, Math.max(0, duration - originalLength));
+          applySourceRange(bar, item, nextStart, nextStart + originalLength);
+        }
+      };
+
+      const mu = () => {
+        document.removeEventListener('mousemove', mm);
+        document.removeEventListener('mouseup', mu);
+        win.classList.remove('dragging');
+        renderBGMTrack();
+      };
+      document.addEventListener('mousemove', mm);
+      document.addEventListener('mouseup', mu);
+    });
+
+    paintSelector(bar, item);
+  }
+
+  const previousRenderBGMTrack = window.renderBGMTrack;
+  window.renderBGMTrack = function() {
+    const result = previousRenderBGMTrack.apply(this, arguments);
+    BGM.items.forEach(item => {
+      const bar = document.querySelector(`.bgm-bar[data-bid="${item.id}"]`);
+      if (bar) bindSelector(bar, item);
+    });
+    return result;
+  };
+
+  renderBGMTrack();
+})();
+</script>
+
+<style id="bgm-visible-order-style">
+.timeline-area { height: 304px !important; }
+.timeline-inner { height: 268px !important; }
+.tlabel.audio-label, .audio-row { height: 60px !important; }
+.bgm-bar {
+  top: 3px !important; bottom: 3px !important;
+  background: linear-gradient(90deg,#123824,#1b4b31) !important;
+  border-color: #4da975 !important;
+}
+.bgm-bar .clip-label {
+  top: 4px !important; height: 18px !important; line-height: 18px !important;
+  left: 10px !important; right: 10px !important; color: #d7ffe5 !important;
+  font-size: 11px !important; font-weight: 600;
+}
+.bgm-source-strip {
+  left: 10px !important; right: 10px !important; bottom: 5px !important; height: 24px !important;
+  border: 2px solid #f2c75c !important; border-radius: 5px !important;
+  background: repeating-linear-gradient(90deg,#070c09 0,#070c09 5px,#16251b 5px,#16251b 9px) !important;
+  box-shadow: 0 0 0 1px #000 inset,0 1px 5px #000 !important;
+  overflow: hidden !important;
+}
+.bgm-source-window {
+  top: 2px !important; bottom: 2px !important;
+  background: linear-gradient(90deg,#45ca79,#79e69b) !important;
+  border-left: 4px solid #fff1a8 !important; border-right: 4px solid #fff1a8 !important;
+  box-shadow: 0 0 0 1px #eaffef99 inset !important;
+}
+.bgm-source-handle { width: 12px !important; background: rgba(255,224,116,.55) !important; }
+.bgm-source-window::after {
+  content: '\C120\D0DD \AD6C\AC04'; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #092214; font-size: 9px; font-weight: 800; pointer-events: none;
+}
+</style>
+<script id="bgm-visible-order-patch">
+(function installVisibleBGMSelectorAndOrder() {
+  if (window.__bgmVisibleOrderInstalled) return;
+  window.__bgmVisibleOrderInstalled = true;
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function moveBGMDirectlyBelowSubtitle() {
+    const audioLabel = document.getElementById('audioLabel');
+    const subLabel = document.getElementById('trackSel2')?.closest('.tlabel');
+    if (audioLabel && subLabel && subLabel.parentElement === audioLabel.parentElement) {
+      subLabel.insertAdjacentElement('afterend', audioLabel);
+    }
+    const audioRow = document.getElementById('trackAudio');
+    const subRow = document.getElementById('trackSub');
+    if (audioRow && subRow && subRow.parentElement === audioRow.parentElement) {
+      subRow.insertAdjacentElement('afterend', audioRow);
+    }
+  }
+
+  function fitTimelineLength(item) {
+    const selectedLength = getBGMSourceDuration(item);
+    const limit = S.totalDur > 0 ? S.totalDur : item.start + selectedLength;
+    item.end = Math.max(item.start + 0.1, Math.min(limit, item.start + selectedLength));
+  }
+
+  function repaint(bar, item) {
+    const win = bar.querySelector('.bgm-source-window');
+    if (!win) return;
+    const duration = Math.max(0.1, Number(item.duration) || 0.1);
+    const sourceStart = getBGMSourceStart(item);
+    const sourceEnd = getBGMSourceEnd(item);
+    win.style.left = `${clamp(sourceStart / duration * 100, 0, 100)}%`;
+    win.style.width = `${clamp((sourceEnd - sourceStart) / duration * 100, 0.05, 100)}%`;
+    const label = bar.querySelector('.clip-label');
+    if (label) {
+      label.textContent = `\uD83C\uDFB5 ${item.name} \u00B7 \uC6D0\uBCF8 ${fmtTime(sourceStart)}-${fmtTime(sourceEnd)} / \uC804\uCCB4 ${fmtTime(duration)}`;
+    }
+  }
+
+  function applyRange(bar, item, start, end) {
+    const duration = Math.max(0.1, Number(item.duration) || 0.1);
+    item.sourceStart = clamp(start, 0, Math.max(0, duration - 0.1));
+    item.sourceEnd = clamp(end, item.sourceStart + 0.1, duration);
+    fitTimelineLength(item);
+    syncBGMSourceInputs();
+    syncBGMPlayback();
+    repaint(bar, item);
+  }
+
+  function bindVisibleSelector(bar, item) {
+    const strip = bar.querySelector('.bgm-source-strip');
+    const win = bar.querySelector('.bgm-source-window');
+    if (!strip || !win || strip.dataset.visibleBound === '1') return;
+    strip.dataset.visibleBound = '1';
+
+    strip.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      ev.stopPropagation();
+      setActiveBGM(item.id, false);
+      const rect = strip.getBoundingClientRect();
+      const duration = Math.max(0.1, Number(item.duration) || 0.1);
+      let dragStart = getBGMSourceStart(item);
+      let dragEnd = getBGMSourceEnd(item);
+      const selectedLength = Math.max(0.1, dragEnd - dragStart);
+      const startX = ev.clientX;
+      let mode = 'place';
+      if (ev.target.classList.contains('bgm-source-handle')) {
+        mode = ev.target.classList.contains('left') ? 'left' : 'right';
+      } else if (ev.target.closest('.bgm-source-window')) {
+        mode = 'move';
+      }
+
+      if (mode === 'place') {
+        const clickedTime = clamp((ev.clientX - rect.left) / Math.max(1, rect.width), 0, 1) * duration;
+        dragStart = clamp(clickedTime, 0, Math.max(0, duration - selectedLength));
+        dragEnd = dragStart + selectedLength;
+        applyRange(bar, item, dragStart, dragEnd);
+        mode = 'move';
+      }
+      win.classList.add('dragging');
+
+      const mm = moveEv => {
+        moveEv.preventDefault();
+        const delta = (moveEv.clientX - startX) / Math.max(1, rect.width) * duration;
+        if (mode === 'left') {
+          applyRange(bar, item, dragStart + delta, dragEnd);
+        } else if (mode === 'right') {
+          applyRange(bar, item, dragStart, dragEnd + delta);
+        } else {
+          const nextStart = clamp(dragStart + delta, 0, Math.max(0, duration - selectedLength));
+          applyRange(bar, item, nextStart, nextStart + selectedLength);
+        }
+      };
+      const mu = () => {
+        document.removeEventListener('mousemove', mm);
+        document.removeEventListener('mouseup', mu);
+        win.classList.remove('dragging');
+        renderBGMTrack();
+      };
+      document.addEventListener('mousemove', mm);
+      document.addEventListener('mouseup', mu);
+    }, true);
+    repaint(bar, item);
+  }
+
+  const previousRender = window.renderBGMTrack;
+  window.renderBGMTrack = function() {
+    const result = previousRender.apply(this, arguments);
+    moveBGMDirectlyBelowSubtitle();
+    BGM.items.forEach(item => {
+      const bar = document.querySelector(`.bgm-bar[data-bid="${item.id}"]`);
+      if (bar) bindVisibleSelector(bar, item);
+    });
+    return result;
+  };
+
+  moveBGMDirectlyBelowSubtitle();
+  renderBGMTrack();
+})();
+</script>
+
+<!-- export-audio-compatibility-patch: FFmpeg-only H.264 + AAC-LC stereo 44.1kHz -->
 </body>
 </html>
+
