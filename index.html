@@ -703,6 +703,7 @@ body {
 
 <!-- Hidden file inputs -->
 <input type="file" id="mediaInput" accept="image/*,video/*,audio/*,.avi,.mov,.mp4,.mp3,.3gp,.mpg,.mpeg,.m4v,.vob,.wmv,.asf,.mkv,.flv,.webm,.gif,.mxf,.av1,.aac,.mp2,.pcm,.flac,.ogg,.opus,.wav" multiple style="display:none">
+<input type="file" id="projectImportInput" accept="video/*,image/*,.avi,.mov,.mp4,.3gp,.mpg,.mpeg,.m4v,.vob,.wmv,.asf,.mkv,.flv,.webm,.mxf,.av1,.jpg,.jpeg,.png,.webp,.gif,.bmp" multiple style="display:none">
 <input type="file" id="srtInput" accept=".srt,.txt" style="display:none">
 <input type="file" id="bgmInput" accept="audio/*,.mp3,.aac,.mp2,.pcm,.flac,.ogg,.opus,.wav" style="display:none" onchange="loadBGM(this.files[0])">
 
@@ -710,6 +711,9 @@ body {
 <div class="toolbar">
   <button class="tool-btn active" data-tab="media" onclick="switchToolTab('media',this)">
     <span class="tool-icon">🎞</span>미디어
+  </button>
+  <button class="tool-btn" data-tab="import" onclick="switchToolTab('import',this)">
+    <span class="tool-icon">📂</span>불러오기
   </button>
   <button class="tool-btn" data-tab="text" onclick="switchToolTab('text',this)">
     <span class="tool-icon" style="font-weight:900;font-size:14px">T</span>텍스트
@@ -955,6 +959,30 @@ body {
       </div>
       <div class="style-grid-wrap">
         <div id="effectGrid"></div>
+      </div>
+    </div>
+
+    <!-- Import tab -->
+    <div class="panel-tab" id="tabImport">
+      <div class="panel-header">파일 불러오기</div>
+      <div class="panel-content">
+        <div class="upload-zone" id="projectImportZone">
+          <div style="font-size:26px;margin-bottom:4px">📂</div>
+          <div>편집할 영상·이미지 선택</div>
+          <div style="font-size:10px;margin-top:2px;color:#555">내보낸 MP4도 다시 편집할 수 있습니다</div>
+        </div>
+        <button class="srt-upload-btn" onclick="document.getElementById('projectImportInput').click()">
+          📂 파일 선택
+        </button>
+        <div id="projectImportStatus" style="margin-top:8px;padding:8px;background:#1a1a1a;border-radius:6px;color:#8fb7d6;font-size:10px;line-height:1.45">
+          불러온 영상은 미디어 목록과 타임라인에 자동으로 추가됩니다.
+        </div>
+        <button id="importRecentBtn" class="media-add-selected" style="display:none;width:100%;margin-top:8px;padding:8px 10px;background:#263b52;border:1px solid #3b6f9e;border-radius:6px;color:#cfe7ff;cursor:pointer;font-size:11px" onclick="reimportLastExport()">
+          &#8635; 최근 내보낸 영상 다시 불러오기
+        </button>
+        <div style="margin-top:14px;color:#666;font-size:10px;line-height:1.5">
+          타임라인에 추가된 파일은 컷 분할·길이 조절·편집효과·자막·BGM을 적용한 뒤 다시 내보낼 수 있습니다.
+        </div>
       </div>
     </div>
 
@@ -1583,12 +1611,18 @@ document.getElementById('mediaInput').onchange = e => {
   handleFiles([...e.target.files]);
   e.target.value = '';
 };
+document.getElementById('projectImportInput').onchange = e => {
+  importEditableFiles([...e.target.files]);
+  e.target.value = '';
+};
 document.getElementById('srtInput').onchange = e => {
   if (e.target.files[0]) loadSRT(e.target.files[0]);
   e.target.value = '';
 };
 document.getElementById('uploadZone').onclick = () =>
   document.getElementById('mediaInput').click();
+document.getElementById('projectImportZone').onclick = () =>
+  document.getElementById('projectImportInput').click();
 
 const SUPPORTED_VIDEO_EXTS = new Set(['avi','mov','mp4','3gp','mpg','mpeg','m4v','vob','wmv','asf','mkv','flv','webm','mxf','av1']);
 const SUPPORTED_AUDIO_EXTS = new Set(['mp3','aac','mp2','pcm','flac','ogg','opus','wav']);
@@ -1621,6 +1655,29 @@ function handleFiles(files) {
   });
 }
 
+// Imported media is placed on the timeline immediately so it can be edited
+// without an extra media-library selection step.
+function importEditableFiles(files) {
+  const list = sortFilesByName(files);
+  if (!list.length) return;
+  let accepted = 0;
+  list.forEach(file => {
+    if (isImageFile(file)) {
+      accepted++;
+      addImgMedia(file, { autoAddToTimeline: true });
+    } else if (isVideoFile(file)) {
+      accepted++;
+      addVidMedia(file, { autoAddToTimeline: true, imported: true });
+    } else {
+      showToast(`불러오기 탭에서는 영상·이미지만 지원합니다: ${file.name}`, 'error');
+    }
+  });
+  const status = document.getElementById('projectImportStatus');
+  if (status && accepted) {
+    status.textContent = `${accepted}개 파일을 불러오는 중입니다. 미디어 목록과 타임라인에 추가되면 바로 편집할 수 있습니다.`;
+  }
+}
+
 function sortFilesByName(files) {
   return [...files].sort((a, b) => a.name.localeCompare(
     b.name,
@@ -1629,7 +1686,8 @@ function sortFilesByName(files) {
   ));
 }
 
-function addImgMedia(file) {
+function addImgMedia(file, opt) {
+  opt = opt || {};
   const url = URL.createObjectURL(file);
   const img = new Image();
   img.src = url;
@@ -1637,6 +1695,7 @@ function addImgMedia(file) {
     const item = { id: S.nid++, type:'image', name:file.name, src:url, element:img, thumbnail:url, duration:3 };
     S.media.push(item);
     renderMediaGrid();
+    if (opt.autoAddToTimeline) addToTimeline(item);
   };
 }
 
@@ -1656,7 +1715,7 @@ function addVidMedia(file, opt) {
     }
     settled = true;
     URL.revokeObjectURL(url);
-    transcodeVideoForImport(file);
+    transcodeVideoForImport(file, opt);
   };
   vid.onloadedmetadata = () => {
     settled = true;
@@ -1671,6 +1730,7 @@ function addVidMedia(file, opt) {
       added = true;
       S.media.push(item);
       renderMediaGrid();
+      if (opt.autoAddToTimeline) addToTimeline(item);
     };
     vid.currentTime = item.duration ? Math.min(0.5, Math.max(0, item.duration / 2)) : 0;
     vid.onseeked = () => {
@@ -1700,7 +1760,8 @@ async function ensureImportFFmpeg() {
   return window._importFFmpeg;
 }
 
-async function transcodeVideoForImport(file) {
+async function transcodeVideoForImport(file, opt) {
+  opt = opt || {};
   const srcName = `input.${fileExt(file) || 'media'}`;
   const outName = 'import.mp4';
   showToast(`변환 후 가져오는 중: ${file.name}`, null, 5000);
@@ -1726,7 +1787,7 @@ async function transcodeVideoForImport(file) {
     const converted = new File([blob], file.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' });
     try { ff.FS('unlink', srcName); } catch(e) {}
     try { ff.FS('unlink', outName); } catch(e) {}
-    addVidMedia(converted, { converted: true });
+    addVidMedia(converted, { ...opt, converted: true });
     showToast(`지원 포맷으로 변환 완료: ${converted.name}`, 'success', 3500);
   } catch(e) {
     console.error(e);
@@ -3528,11 +3589,13 @@ function downloadBlob(blob, filename) {
     try {
       EXPORT_CACHE.file = new File([blob], filename, { type: blob.type || 'video/mp4' });
       EXPORT_CACHE.importedName = '';
-      const btn = document.getElementById('reimportExportBtn');
-      if (btn) {
-        btn.style.display = '';
-        btn.title = `${filename}을 미디어 목록으로 다시 불러옵니다.`;
-      }
+      ['reimportExportBtn', 'importRecentBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+          btn.style.display = '';
+          btn.title = `${filename}을 다시 편집합니다.`;
+        }
+      });
     } catch(e) {}
   }
   const url = URL.createObjectURL(blob);
@@ -3549,8 +3612,8 @@ function reimportLastExport() {
     return showToast('최근 내보낸 영상은 이미 미디어 목록에 있습니다.');
   }
   EXPORT_CACHE.importedName = file.name;
-  addVidMedia(file, { exported: true });
-  showToast(`내보낸 영상 다시 불러오는 중: ${file.name}`, null, 3500);
+  addVidMedia(file, { exported: true, autoAddToTimeline: true });
+  showToast(`내보낸 영상을 타임라인에 다시 불러오는 중: ${file.name}`, null, 3500);
 }
 function loadScript(src) {
   return new Promise((res, rej) => {
@@ -3568,7 +3631,8 @@ function switchToolTab(tab, btn) {
   document.querySelectorAll('.tool-btn[data-tab]').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.querySelectorAll('.panel-tab').forEach(p => p.classList.remove('active'));
-  if (tab === 'text') document.getElementById('tabText').classList.add('active');
+  if (tab === 'import') document.getElementById('tabImport').classList.add('active');
+  else if (tab === 'text') document.getElementById('tabText').classList.add('active');
   else if (tab === 'effect') document.getElementById('tabEffect').classList.add('active');
   else document.getElementById('tabMedia').classList.add('active');
 }
