@@ -975,7 +975,12 @@ body {
           📂 파일 선택
         </button>
         <div id="projectImportStatus" style="margin-top:8px;padding:8px;background:#1a1a1a;border-radius:6px;color:#8fb7d6;font-size:10px;line-height:1.45">
-          불러온 영상은 미디어 목록과 타임라인에 자동으로 추가됩니다.
+          불러온 영상은 미디어 목록과 타임라인에 자동으로 추가됩니다. 같은 브라우저에서 방금 내보낸 영상은 원본 편집 레이어도 복원됩니다.
+        </div>
+        <div id="importLayerActions" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+          <button class="media-add-selected" style="padding:7px 4px;background:#2a3b55;border:1px solid #3b6f9e;color:#cfe7ff;cursor:pointer;font-size:10px" onclick="addTextFromImportTab()">T 텍스트 추가</button>
+          <button class="media-add-selected" style="padding:7px 4px;background:#2a3b55;border:1px solid #3b6f9e;color:#cfe7ff;cursor:pointer;font-size:10px" onclick="document.getElementById('bgmInput').click()">♫ BGM 추가·교체</button>
+          <button class="media-add-selected" style="padding:7px 4px;background:#2a3b55;border:1px solid #3b6f9e;color:#cfe7ff;cursor:pointer;font-size:10px" onclick="muteImportedVideoAudio()">🔇 원본 소리 끄기</button>
         </div>
         <button id="importRecentBtn" class="media-add-selected" style="display:none;width:100%;margin-top:8px;padding:8px 10px;background:#263b52;border:1px solid #3b6f9e;border-radius:6px;color:#cfe7ff;cursor:pointer;font-size:11px" onclick="reimportLastExport()">
           &#8635; 최근 내보낸 영상 다시 불러오기
@@ -1191,7 +1196,7 @@ const S = {
   lastTs: null,
 };
 
-const EXPORT_CACHE = { file: null, importedName: '' };
+const EXPORT_CACHE = { file: null, importedName: '', exportName: '', projectSnapshot: null };
 
 // ══════════════════════════════════════════════
 //  TOAST
@@ -1660,6 +1665,13 @@ function handleFiles(files) {
 function importEditableFiles(files) {
   const list = sortFilesByName(files);
   if (!list.length) return;
+  if (list.length === 1 && isVideoFile(list[0]) && canRestoreRecentExport(list[0])) {
+    restoreEditableProjectSnapshot();
+    const status = document.getElementById('projectImportStatus');
+    if (status) status.textContent = '최근 내보내기에서 원본 텍스트·자막·BGM 편집 레이어를 복원했습니다.';
+    showToast('원본 편집 레이어를 복원했습니다. 텍스트와 BGM을 다시 수정할 수 있습니다.', 'success', 4500);
+    return;
+  }
   let accepted = 0;
   list.forEach(file => {
     if (isImageFile(file)) {
@@ -1676,6 +1688,25 @@ function importEditableFiles(files) {
   if (status && accepted) {
     status.textContent = `${accepted}개 파일을 불러오는 중입니다. 미디어 목록과 타임라인에 추가되면 바로 편집할 수 있습니다.`;
   }
+}
+
+function addTextFromImportTab() {
+  addTextClip(null);
+  const textBtn = document.querySelector('.tool-btn[data-tab="text"]');
+  if (textBtn) switchToolTab('text', textBtn);
+}
+
+function muteImportedVideoAudio() {
+  const clips = S.clips.filter(c => c.type === 'video');
+  if (!clips.length) return showToast('먼저 영상을 불러와 주세요.', 'error');
+  saveState();
+  clips.forEach(c => {
+    c.vol = 0;
+    if (c.element) c.element.volume = 0;
+  });
+  renderPreview();
+  if (S.selId) selectClip(S.selId);
+  showToast('원본 영상 소리를 끄고 새 BGM을 넣을 수 있습니다.', 'success', 3500);
 }
 
 function sortFilesByName(files) {
@@ -2630,6 +2661,15 @@ function updateCP(id, prop, val) {
   syncEffectTimingForTarget(c);
   recalcDuration(); renderTimeline(); renderPreview();
 }
+function updateClipVolume(id, value) {
+  const c = S.clips.find(c => c.id === id && c.type === 'video');
+  if (!c) return;
+  c.vol = Math.max(0, Math.min(1, Number(value) || 0));
+  if (c.element) c.element.volume = c.vol;
+  const label = document.getElementById('clipVolValue');
+  if (label) label.textContent = Math.round(c.vol * 100) + '%';
+  renderPreview();
+}
 function updateSubText(id, text) {
   const c = S.clips.find(c=>c.id===id);
   if (!c) return;
@@ -3069,6 +3109,10 @@ async function startExport() {
   const bitrate = parseInt(document.getElementById('expBitrate').value);
   const [expW, expH] = getExportDims();
   const requestedFmt = EXP.fmt;
+
+  // Keep the editable layer graph for the in-app "recent export" restore
+  // path. A flattened MP4 cannot recover text/BGM layers by itself.
+  EXPORT_CACHE.projectSnapshot = captureEditableProjectSnapshot();
 
   // Resize canvas to export resolution
   const origW = canvas.width, origH = canvas.height;
@@ -3584,11 +3628,60 @@ async function expFFmpeg(fps, bitrate) {
   await sleep(1800);
 }
 
+function captureEditableProjectSnapshot() {
+  return {
+    media: S.media.slice(),
+    clips: S.clips.map(c => ({ ...c })),
+    subs: S.subs.map(s => ({ ...s })),
+    bgmItems: BGM.items.slice(),
+    bgmActiveId: BGM.activeId,
+    thumbnailMediaId: S.thumbnailMediaId,
+    nid: S.nid,
+    t: S.t,
+    autoTransition: S.autoTransition,
+    transitionDur: S.transitionDur,
+  };
+}
+
+function canRestoreRecentExport(file) {
+  const snap = EXPORT_CACHE.projectSnapshot;
+  if (!snap || !snap.clips?.length || !file) return false;
+  return file === EXPORT_CACHE.file || !!(file.name && file.name === EXPORT_CACHE.exportName);
+}
+
+function restoreEditableProjectSnapshot() {
+  const snap = EXPORT_CACHE.projectSnapshot;
+  if (!snap) return false;
+  BGM.items.forEach(item => { try { item.element?.pause(); } catch(e) {} });
+  S.media = snap.media.slice();
+  S.clips = snap.clips.map(c => ({ ...c }));
+  S.subs = snap.subs.map(s => ({ ...s }));
+  S.thumbnailMediaId = snap.thumbnailMediaId ?? null;
+  S.nid = Math.max(snap.nid || 1, ...S.clips.map(c => Number(c.id) || 0), ...S.media.map(m => Number(m.id) || 0)) + 1;
+  S.t = Math.max(0, snap.t || 0);
+  S.autoTransition = snap.autoTransition !== false;
+  S.transitionDur = snap.transitionDur || 0.45;
+  S.selId = null;
+  S.selIds.clear();
+  BGM.items = snap.bgmItems.slice();
+  BGM.activeId = snap.bgmActiveId || (BGM.items[0]?.id ?? null);
+  renderMediaGrid();
+  recalcDuration();
+  renderTimeline();
+  renderBGMTrack();
+  syncBGMInputs();
+  renderPreview();
+  const focus = S.clips.find(c => c.type === 'text' || c.type === 'subtitle') || S.clips[0];
+  if (focus) selectClip(focus.id);
+  return true;
+}
+
 function downloadBlob(blob, filename) {
   if (blob && blob.size > 0) {
     try {
       EXPORT_CACHE.file = new File([blob], filename, { type: blob.type || 'video/mp4' });
       EXPORT_CACHE.importedName = '';
+      EXPORT_CACHE.exportName = filename;
       ['reimportExportBtn', 'importRecentBtn'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) {
@@ -3612,6 +3705,11 @@ function reimportLastExport() {
     return showToast('최근 내보낸 영상은 이미 미디어 목록에 있습니다.');
   }
   EXPORT_CACHE.importedName = file.name;
+  if (canRestoreRecentExport(file)) {
+    restoreEditableProjectSnapshot();
+    showToast('원본 텍스트·자막·BGM 편집 레이어를 복원했습니다.', 'success', 4500);
+    return;
+  }
   addVidMedia(file, { exported: true, autoAddToTimeline: true });
   showToast(`내보낸 영상을 타임라인에 다시 불러오는 중: ${file.name}`, null, 3500);
 }
@@ -4097,6 +4195,41 @@ selectClip = function(id) {
   if (clip.type === 'sticker') {
     updateTextSelBox();
     renderStickerProps(id);
+    return;
+  }
+
+  if (clip.type === 'video') {
+    updateTextSelBox();
+    const area = document.getElementById('clipPropsArea');
+    const vol = Math.round((clip.vol == null ? 1 : clip.vol) * 100);
+    area.innerHTML = `
+      <div class="prop-grp">
+        <div class="prop-lbl">불러온 영상 오디오</div>
+        <div class="prop-val" style="font-size:10px;color:#8fb7d6;line-height:1.45">
+          원본 영상에 포함된 소리입니다. 기존 BGM을 바꾸려면 0%로 낮춘 뒤 새 BGM을 추가하세요.
+        </div>
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">시작 시간 (초)</div>
+        <input class="prop-inp" type="number" step="0.1" min="${minClipStart(clip)}" value="${clip.startTime.toFixed(2)}"
+          onchange="updateCP(${id},'startTime',+this.value)">
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">지속 시간 (초)</div>
+        <input class="prop-inp" type="number" step="0.1" min="0.1" value="${clip.duration.toFixed(2)}"
+          onchange="updateCP(${id},'duration',+this.value)">
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">원본 오디오 볼륨 <span id="clipVolValue" style="color:#aaa">${vol}%</span></div>
+        <input type="range" min="0" max="100" value="${vol}" style="width:100%;accent-color:#5ab4ff;cursor:pointer"
+          oninput="updateClipVolume(${id},+this.value)">
+      </div>
+      <div class="prop-grp">
+        <div class="prop-lbl">텍스트·효과</div>
+        <div class="prop-val" style="font-size:10px;color:#777;line-height:1.45">텍스트 탭에서 새 텍스트를 추가하고, 편집효과 탭에서 이 컷에 효과를 적용할 수 있습니다.</div>
+      </div>
+      <button class="del-btn" onclick="deleteClip(${id})">🗑️ 영상 컷 삭제</button>
+    `;
     return;
   }
 
