@@ -1347,6 +1347,7 @@ function renderPreview() {
 }
 
 function prepareClipFrame(clip, time) {
+  if (EXP.frameAccurate) return; // Export has already awaited this exact decoded frame.
   if (!clip || clip.type !== 'video' || !clip.element) return;
   const lt = Math.max(0, Math.min(clip.duration || 0, time - clip.startTime));
   const limit = S.playing ? 0.45 : 0.25;
@@ -3104,6 +3105,8 @@ function selExpFmt(el) {
 }
 
 async function startExport() {
+  if (EXP.exporting) return;
+  EXP.exporting = true;
   EXP.cancelled = false;
   const fps     = parseInt(document.getElementById('expFpsOpt').value);
   const bitrate = parseInt(document.getElementById('expBitrate').value);
@@ -3124,14 +3127,7 @@ async function startExport() {
   try {
     await ensureExportTtsReady();
     EXP.fmt = 'ffmpeg';
-    if (projectHasExportAudio()) {
-      const recorded = await expMediaRecorder(fps, bitrate, { returnBlob:true, progressMax:72 });
-      if (EXP.cancelled) return;
-      if (!recorded?.blob) throw new Error('The intermediate recording did not contain media data.');
-      await transcodeRecordedExport(recorded.blob, recorded.ext, bitrate);
-    } else {
-      await expFFmpeg(fps, bitrate);
-    }
+    await exportFrameAccurateMp4(fps, bitrate);
   } catch(e) {
     if (!EXP.cancelled) showToast('내보내기 실패:\n' + e.message, 'error', 5000);
     console.error(e);
@@ -3140,12 +3136,15 @@ async function startExport() {
     canvas.width = origW; canvas.height = origH;
     renderPreview();
     EXP.fmt = requestedFmt;
+    EXP.exporting = false;
     if (!EXP.cancelled) closeExportModal();
   }
 }
 
 function cancelExport() {
   EXP.cancelled = true;
+  EXP.frameAbort?.abort();
+  try { EXP.frameFFmpeg?.exit(); } catch(e) {}
   if (EXP.recorder?.state === 'recording') EXP.recorder.stop();
   pause();
   closeExportModal();
@@ -6929,6 +6928,7 @@ _updateUndoRedoBtns();
 </script>
 
 <!-- export-audio-compatibility-patch: FFmpeg-only H.264 + AAC-LC stereo 44.1kHz -->
+<script src="export-frames.js"></script>
 <script src="project-storage.js"></script>
 </body>
 </html>
